@@ -2,20 +2,9 @@
 name = "ssbu-ui-sandbox"
 version = "0.1.0"
 authors = []
-edition = "2021"
-
-[package.metadata.skyline]
-titleid = "01006A800016E000" # Smash Ultimate
-
-[lib]
-crate-type = ["cdylib"]
+edition = "2024"
 
 [dependencies]
-skyline = "0.6.0"
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
-lto = true
+binrw = "0.15"
+serde = { version = "1.0.229", features = ["derive"] }
+yaml_serde = "0.10"
