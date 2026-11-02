@@ -6,12 +6,14 @@ pub mod binary;
 pub mod sarc;
 
 pub use bffnt::Bffnt;
-pub use bflan::Bflan;
+pub use bflan::{Bflan, BflanError};
 pub use bflim::Bflim;
-pub use bflyt::Bflyt;
-pub use sarc::{SarcArchive, SarcError, SarcYaml, SarcYamlError};
+pub use bflyt::{Bflyt, BflytError, UnknownBflytSection};
+pub use sarc::{
+    BflytYamlData, SarcArchive, SarcError, SarcYaml, SarcYamlEntry, SarcYamlError, SarcYamlPayload,
+};
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 pub fn from_yaml_str<T: DeserializeOwned>(input: &str) -> Result<T, yaml_serde::Error> {
     yaml_serde::from_str(input)

@@ -5,6 +5,8 @@ use std::io::Cursor;
 use binrw::{BinRead, BinWrite, Endian};
 use serde::{Deserialize, Serialize};
 
+use crate::bflan::{Bflan, BflanError};
+use crate::bflyt::{Bflyt, BflytError};
 use crate::binary::ByteOrder;
 
 const SARC_HEADER_SIZE: u16 = 0x14;
@@ -12,7 +14,8 @@ const SFAT_HEADER_SIZE: u16 = 0x0C;
 const SFNT_HEADER_SIZE: u16 = 0x08;
 const MAX_LAYOUT_ENTRIES: usize = 0x3FFF;
 const DEFAULT_HASH_MULTIPLIER: u32 = 0x65;
-const SARC_YAML_VERSION: u32 = 1;
+const SARC_YAML_VERSION: u32 = 2;
+const LEGACY_SARC_YAML_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BinRead, BinWrite)]
 struct SarcHeader {
@@ -72,15 +75,31 @@ impl SarcArchive {
 
     pub fn from_yaml_str(input: &str) -> Result<Self, SarcYamlError> {
         let document: SarcYaml = yaml_serde::from_str(input)?;
-        if document.version != SARC_YAML_VERSION {
+        if document.version != SARC_YAML_VERSION && document.version != LEGACY_SARC_YAML_VERSION {
             return Err(SarcYamlError::UnsupportedVersion(document.version));
         }
 
         let files = document
             .files
             .into_iter()
-            .map(|(name, encoded)| {
-                let data = decode_hex(&name, &encoded)?;
+            .map(|(name, entry)| {
+                let data = match entry {
+                    SarcYamlEntry::LegacyHex(encoded) => decode_hex(&name, &encoded)?,
+                    SarcYamlEntry::Payload(payload) => match *payload {
+                        SarcYamlPayload::RawHex(encoded) => decode_hex(&name, &encoded)?,
+                        SarcYamlPayload::Bflan(bflan) => {
+                            bflan.to_bytes().map_err(SarcYamlError::Bflan)?
+                        }
+                        SarcYamlPayload::Bflyt(bflyt) => {
+                            let bytes = decode_hex(&name, &bflyt.raw_hex)?;
+                            let parsed = Bflyt::from_bytes(&bytes).map_err(SarcYamlError::Bflyt)?;
+                            if parsed != bflyt.layout {
+                                return Err(SarcYamlError::ModifiedBflyt(name));
+                            }
+                            bytes
+                        }
+                    },
+                };
                 Ok((name, data))
             })
             .collect::<Result<_, SarcYamlError>>()?;
@@ -93,15 +112,38 @@ impl SarcArchive {
     }
 
     pub fn to_yaml_string(&self) -> Result<String, SarcYamlError> {
+        let files = self
+            .files
+            .iter()
+            .map(|(name, data)| {
+                let payload = if name.ends_with(".bflan") {
+                    Bflan::from_bytes(data).ok().and_then(|mut bflan| {
+                        let encoded = bflan.to_bytes().ok()?;
+                        bflan.header.file_size = u32::try_from(encoded.len()).ok()?;
+                        Some(SarcYamlPayload::Bflan(Box::new(bflan)))
+                    })
+                } else if name.ends_with(".bflyt") {
+                    Bflyt::from_bytes(data).ok().map(|layout| {
+                        SarcYamlPayload::Bflyt(Box::new(BflytYamlData {
+                            layout,
+                            raw_hex: encode_hex(data),
+                        }))
+                    })
+                } else {
+                    None
+                };
+                let entry = payload.map_or_else(
+                    || SarcYamlEntry::Payload(Box::new(SarcYamlPayload::RawHex(encode_hex(data)))),
+                    |payload| SarcYamlEntry::Payload(Box::new(payload)),
+                );
+                (name.clone(), entry)
+            })
+            .collect();
         let document = SarcYaml {
             version: SARC_YAML_VERSION,
             byte_order: self.byte_order,
             hash_multiplier: self.hash_multiplier,
-            files: self
-                .files
-                .iter()
-                .map(|(name, data)| (name.clone(), encode_hex(data)))
-                .collect(),
+            files,
         };
         Ok(yaml_serde::to_string(&document)?)
     }
@@ -349,18 +391,42 @@ impl SarcArchive {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SarcYaml {
     pub version: u32,
     pub byte_order: ByteOrder,
     pub hash_multiplier: u32,
-    pub files: BTreeMap<String, String>,
+    pub files: BTreeMap<String, SarcYamlEntry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SarcYamlEntry {
+    LegacyHex(String),
+    Payload(Box<SarcYamlPayload>),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "format", content = "data", rename_all = "snake_case")]
+pub enum SarcYamlPayload {
+    RawHex(String),
+    Bflan(Box<Bflan>),
+    Bflyt(Box<BflytYamlData>),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BflytYamlData {
+    pub layout: Bflyt,
+    pub raw_hex: String,
 }
 
 #[derive(Debug)]
 pub enum SarcYamlError {
     Yaml(yaml_serde::Error),
+    Bflan(BflanError),
+    Bflyt(BflytError),
+    ModifiedBflyt(String),
     UnsupportedVersion(u32),
     InvalidHex { path: String, byte_index: usize },
 }
@@ -369,6 +435,12 @@ impl fmt::Display for SarcYamlError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Yaml(error) => write!(formatter, "SARC YAML error: {error}"),
+            Self::Bflan(error) => write!(formatter, "SARC BFLAN YAML error: {error}"),
+            Self::Bflyt(error) => write!(formatter, "SARC BFLYT YAML error: {error}"),
+            Self::ModifiedBflyt(path) => write!(
+                formatter,
+                "BFLYT model for {path:?} was modified, but binary writing is not supported"
+            ),
             Self::UnsupportedVersion(version) => {
                 write!(formatter, "unsupported SARC YAML version: {version}")
             }
@@ -386,7 +458,9 @@ impl std::error::Error for SarcYamlError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Yaml(error) => Some(error),
-            Self::UnsupportedVersion(_) | Self::InvalidHex { .. } => None,
+            Self::Bflan(error) => Some(error),
+            Self::Bflyt(error) => Some(error),
+            Self::UnsupportedVersion(_) | Self::ModifiedBflyt(_) | Self::InvalidHex { .. } => None,
         }
     }
 }
@@ -394,6 +468,18 @@ impl std::error::Error for SarcYamlError {
 impl From<yaml_serde::Error> for SarcYamlError {
     fn from(error: yaml_serde::Error) -> Self {
         Self::Yaml(error)
+    }
+}
+
+impl From<BflanError> for SarcYamlError {
+    fn from(error: BflanError) -> Self {
+        Self::Bflan(error)
+    }
+}
+
+impl From<BflytError> for SarcYamlError {
+    fn from(error: BflytError) -> Self {
+        Self::Bflyt(error)
     }
 }
 
@@ -454,7 +540,7 @@ fn decode_hex(path: &str, encoded: &str) -> Result<Vec<u8>, SarcYamlError> {
     }
 
     let bytes = encoded.as_bytes();
-    if bytes.len() % 2 != 0 {
+    if bytes.len() & 1 != 0 {
         return Err(SarcYamlError::InvalidHex {
             path: path.to_owned(),
             byte_index: bytes.len(),
