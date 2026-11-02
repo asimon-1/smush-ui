@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::binary::ByteOrder;
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Bffnt {
@@ -104,5 +106,3 @@ pub struct KerningPair {
     pub second_character: u16,
     pub horizontal_offset: i16,
 }
-
-use crate::bflim::ByteOrder;

@@ -9,7 +9,7 @@ pub use bflan::Bflan;
 pub use bflim::Bflim;
 pub use bflyt::Bflyt;
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 pub fn from_yaml_str<T: DeserializeOwned>(input: &str) -> Result<T, yaml_serde::Error> {
     yaml_serde::from_str(input)

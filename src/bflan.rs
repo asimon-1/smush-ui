@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::bflim::ByteOrder;
 use crate::bflyt::Color;
+use crate::binary::ByteOrder;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

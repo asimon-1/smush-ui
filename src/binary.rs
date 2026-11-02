@@ -1,8 +1,9 @@
 use std::io::{Read, Seek, Write};
 
 use binrw::{BinRead, BinResult, BinWrite, Endian};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BinRead, BinWrite)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BinRead, BinWrite, Serialize, Deserialize)]
 pub struct FileHeader {
     pub magic: [u8; 4],
     pub byte_order_mark: u16,
@@ -11,6 +12,14 @@ pub struct FileHeader {
     pub file_size: u32,
     pub section_count: u16,
     pub padding: u16,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ByteOrder {
+    #[default]
+    BigEndian,
+    LittleEndian,
 }
 
 impl FileHeader {
