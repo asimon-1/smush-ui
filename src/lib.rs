@@ -3,11 +3,13 @@ pub mod bflan;
 pub mod bflim;
 pub mod bflyt;
 pub mod binary;
+pub mod sarc;
 
 pub use bffnt::Bffnt;
 pub use bflan::Bflan;
 pub use bflim::Bflim;
 pub use bflyt::Bflyt;
+pub use sarc::{SarcArchive, SarcError};
 
 use serde::{Serialize, de::DeserializeOwned};
 

@@ -8,8 +8,8 @@ use ssbu_ui_sandbox::bflan::wire::{
 };
 use ssbu_ui_sandbox::bflim::{BflimFooter, BflimImageInfo};
 use ssbu_ui_sandbox::bflyt::wire::{LayoutSectionPrefix, MaterialInfoPrefix, PaneData};
-use ssbu_ui_sandbox::binary::FileHeader;
-use ssbu_ui_sandbox::{Bflyt, from_yaml_str, to_yaml_string};
+use ssbu_ui_sandbox::binary::{ByteOrder, FileHeader};
+use ssbu_ui_sandbox::{Bflyt, SarcArchive, from_yaml_str, to_yaml_string};
 
 #[test]
 fn bflyt_yaml_round_trip_preserves_nested_panes() {
@@ -108,4 +108,31 @@ fn fixed_wire_records_match_documented_sizes() {
     assert_wire_size!(AnimationCurveHeader::default(), 12);
     assert_wire_size!(StepKeyframe::default(), 8);
     assert_wire_size!(HermiteKeyframe::default(), 12);
+}
+
+#[test]
+fn sarc_round_trip_preserves_files_and_byte_order() {
+    let mut archive = SarcArchive::new();
+    archive
+        .files
+        .insert("blyt/sample.bflyt".to_owned(), b"layout data".to_vec());
+    archive
+        .files
+        .insert("anim/sample.bflan".to_owned(), b"animation data".to_vec());
+    archive
+        .files
+        .insert("timg/__Combined.bntx".to_owned(), vec![0xAB; 257]);
+
+    for byte_order in [ByteOrder::LittleEndian, ByteOrder::BigEndian] {
+        archive.byte_order = byte_order;
+        let encoded = archive.to_bytes().expect("archive writes");
+        let decoded = SarcArchive::from_bytes(&encoded).expect("archive reads");
+
+        assert_eq!(decoded, archive);
+    }
+}
+
+#[test]
+fn sarc_rejects_non_sarc_input() {
+    assert!(SarcArchive::from_bytes(b"not an archive").is_err());
 }
