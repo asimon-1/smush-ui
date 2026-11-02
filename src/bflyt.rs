@@ -1,5 +1,43 @@
 use serde::{Deserialize, Serialize};
 
+pub const MAGIC: [u8; 4] = *b"FLYT";
+pub type BflytHeader = crate::binary::FileHeader;
+
+pub mod wire {
+    use binrw::{BinRead, BinWrite};
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, BinRead, BinWrite)]
+    pub struct LayoutSectionPrefix {
+        pub is_drawn_from_middle: u8,
+        pub padding: [u8; 3],
+        pub width: f32,
+        pub height: f32,
+        pub max_parts_height: f32,
+        pub max_parts_width: f32,
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, BinRead, BinWrite)]
+    pub struct PaneData {
+        pub flags: u8,
+        pub origins: u8,
+        pub alpha: u8,
+        pub part_scaling: u8,
+        pub name: [u8; 24],
+        pub user_data: [u8; 8],
+        pub position: [f32; 3],
+        pub rotation: [f32; 3],
+        pub scale: [f32; 2],
+        pub size: [f32; 2],
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, BinRead, BinWrite)]
+    pub struct MaterialInfoPrefix {
+        pub corner_colors: [u8; 16],
+        pub material_index: u16,
+        pub texture_coordinate_set_count: u16,
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Bflyt {
@@ -17,16 +55,10 @@ pub struct Bflyt {
 pub struct LayoutInfo {
     pub width: f32,
     pub height: f32,
-    pub origin: LayoutOrigin,
+    pub is_drawn_from_middle: bool,
+    pub max_parts_height: f32,
+    pub max_parts_width: f32,
     pub name: String,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LayoutOrigin {
-    #[default]
-    Center,
-    TopLeft,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -40,9 +72,11 @@ pub struct PaneNode {
     pub rotation: Vec3,
     pub scale: Vec2,
     pub size: Vec2,
-    pub origin: PaneOrigin,
-    pub parent_origin: PaneOrigin,
+    pub origin: PaneAnchor,
+    pub parent_origin: PaneAnchor,
+    pub part_scaling: u8,
     pub transmit_alpha: bool,
+    pub user_data: [u8; 8],
     pub children: Vec<PaneNode>,
 }
 
@@ -82,13 +116,27 @@ pub enum PaneKind {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PaneOrigin {
+pub enum HorizontalOrigin {
     #[default]
     Center,
     Left,
     Right,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerticalOrigin {
+    #[default]
+    Center,
     Top,
     Bottom,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PaneAnchor {
+    pub x: HorizontalOrigin,
+    pub y: VerticalOrigin,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]

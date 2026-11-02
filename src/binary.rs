@@ -14,6 +14,12 @@ pub struct FileHeader {
     pub padding: u16,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BinRead, BinWrite, Serialize, Deserialize)]
+pub struct SectionHeader {
+    pub magic: [u8; 4],
+    pub size: u32,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ByteOrder {
