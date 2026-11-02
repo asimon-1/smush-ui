@@ -136,3 +136,44 @@ fn sarc_round_trip_preserves_files_and_byte_order() {
 fn sarc_rejects_non_sarc_input() {
     assert!(SarcArchive::from_bytes(b"not an archive").is_err());
 }
+
+#[test]
+fn sarc_yaml_round_trip_preserves_archive_payloads() {
+    let mut archive = SarcArchive::new();
+    archive.byte_order = ByteOrder::BigEndian;
+    archive.hash_multiplier = 0x65;
+    archive.files.insert(
+        "blyt/sample.bflyt".to_owned(),
+        vec![0x00, 0x01, 0x7F, 0x80, 0xFF],
+    );
+    archive
+        .files
+        .insert("anim/empty.bflan".to_owned(), Vec::new());
+
+    let yaml = archive
+        .to_yaml_string()
+        .expect("archive serializes to YAML");
+    let decoded = SarcArchive::from_yaml_str(&yaml).expect("YAML parses to archive");
+
+    assert_eq!(decoded, archive);
+    assert_eq!(
+        SarcArchive::from_bytes(&decoded.to_bytes().expect("archive writes")).unwrap(),
+        archive
+    );
+}
+
+#[test]
+fn sarc_yaml_rejects_unsupported_versions_and_invalid_hex() {
+    let unsupported = "version: 2\nbyte_order: little_endian\nhash_multiplier: 101\nfiles: {}\n";
+    assert!(matches!(
+        SarcArchive::from_yaml_str(unsupported),
+        Err(ssbu_ui_sandbox::SarcYamlError::UnsupportedVersion(2))
+    ));
+
+    let invalid_hex =
+        "version: 1\nbyte_order: little_endian\nhash_multiplier: 101\nfiles:\n  x.bin: \"0z\"\n";
+    assert!(matches!(
+        SarcArchive::from_yaml_str(invalid_hex),
+        Err(ssbu_ui_sandbox::SarcYamlError::InvalidHex { .. })
+    ));
+}

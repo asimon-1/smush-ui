@@ -9,9 +9,9 @@ pub use bffnt::Bffnt;
 pub use bflan::Bflan;
 pub use bflim::Bflim;
 pub use bflyt::Bflyt;
-pub use sarc::{SarcArchive, SarcError};
+pub use sarc::{SarcArchive, SarcError, SarcYaml, SarcYamlError};
 
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 
 pub fn from_yaml_str<T: DeserializeOwned>(input: &str) -> Result<T, yaml_serde::Error> {
     yaml_serde::from_str(input)

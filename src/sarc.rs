@@ -3,6 +3,7 @@ use std::fmt;
 use std::io::Cursor;
 
 use binrw::{BinRead, BinWrite, Endian};
+use serde::{Deserialize, Serialize};
 
 use crate::binary::ByteOrder;
 
@@ -11,6 +12,7 @@ const SFAT_HEADER_SIZE: u16 = 0x0C;
 const SFNT_HEADER_SIZE: u16 = 0x08;
 const MAX_LAYOUT_ENTRIES: usize = 0x3FFF;
 const DEFAULT_HASH_MULTIPLIER: u32 = 0x65;
+const SARC_YAML_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BinRead, BinWrite)]
 struct SarcHeader {
@@ -66,6 +68,42 @@ impl Default for SarcArchive {
 impl SarcArchive {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn from_yaml_str(input: &str) -> Result<Self, SarcYamlError> {
+        let document: SarcYaml = yaml_serde::from_str(input)?;
+        if document.version != SARC_YAML_VERSION {
+            return Err(SarcYamlError::UnsupportedVersion(document.version));
+        }
+
+        let files = document
+            .files
+            .into_iter()
+            .map(|(name, encoded)| {
+                let data = decode_hex(&name, &encoded)?;
+                Ok((name, data))
+            })
+            .collect::<Result<_, SarcYamlError>>()?;
+
+        Ok(Self {
+            files,
+            byte_order: document.byte_order,
+            hash_multiplier: document.hash_multiplier,
+        })
+    }
+
+    pub fn to_yaml_string(&self) -> Result<String, SarcYamlError> {
+        let document = SarcYaml {
+            version: SARC_YAML_VERSION,
+            byte_order: self.byte_order,
+            hash_multiplier: self.hash_multiplier,
+            files: self
+                .files
+                .iter()
+                .map(|(name, data)| (name.clone(), encode_hex(data)))
+                .collect(),
+        };
+        Ok(yaml_serde::to_string(&document)?)
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SarcError> {
@@ -311,6 +349,54 @@ impl SarcArchive {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SarcYaml {
+    pub version: u32,
+    pub byte_order: ByteOrder,
+    pub hash_multiplier: u32,
+    pub files: BTreeMap<String, String>,
+}
+
+#[derive(Debug)]
+pub enum SarcYamlError {
+    Yaml(yaml_serde::Error),
+    UnsupportedVersion(u32),
+    InvalidHex { path: String, byte_index: usize },
+}
+
+impl fmt::Display for SarcYamlError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Yaml(error) => write!(formatter, "SARC YAML error: {error}"),
+            Self::UnsupportedVersion(version) => {
+                write!(formatter, "unsupported SARC YAML version: {version}")
+            }
+            Self::InvalidHex { path, byte_index } => {
+                write!(
+                    formatter,
+                    "invalid hex payload for {path:?} at character {byte_index}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for SarcYamlError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Yaml(error) => Some(error),
+            Self::UnsupportedVersion(_) | Self::InvalidHex { .. } => None,
+        }
+    }
+}
+
+impl From<yaml_serde::Error> for SarcYamlError {
+    fn from(error: yaml_serde::Error) -> Self {
+        Self::Yaml(error)
+    }
+}
+
 #[derive(Debug)]
 pub enum SarcError {
     Binary(binrw::Error),
@@ -345,6 +431,49 @@ fn hash_name(name: &str, multiplier: u32) -> u32 {
     name.as_bytes().iter().fold(0, |hash, byte| {
         hash.wrapping_mul(multiplier).wrapping_add(u32::from(*byte))
     })
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        encoded.push(char::from(DIGITS[usize::from(byte & 0x0F)]));
+    }
+    encoded
+}
+
+fn decode_hex(path: &str, encoded: &str) -> Result<Vec<u8>, SarcYamlError> {
+    fn digit(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
+    }
+
+    let bytes = encoded.as_bytes();
+    if bytes.len() % 2 != 0 {
+        return Err(SarcYamlError::InvalidHex {
+            path: path.to_owned(),
+            byte_index: bytes.len(),
+        });
+    }
+
+    let mut decoded = Vec::with_capacity(bytes.len() / 2);
+    for (index, pair) in bytes.chunks_exact(2).enumerate() {
+        let high = digit(pair[0]).ok_or_else(|| SarcYamlError::InvalidHex {
+            path: path.to_owned(),
+            byte_index: index * 2,
+        })?;
+        let low = digit(pair[1]).ok_or_else(|| SarcYamlError::InvalidHex {
+            path: path.to_owned(),
+            byte_index: index * 2 + 1,
+        })?;
+        decoded.push((high << 4) | low);
+    }
+    Ok(decoded)
 }
 
 fn needs_gpu_alignment(name: &str) -> bool {
