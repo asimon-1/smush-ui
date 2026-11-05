@@ -12,15 +12,15 @@ fn round_trips_font_filenames_and_offsets() {
         ],
     };
     let mut output = Cursor::new(Vec::new());
-    output.write_be(&font_list).expect("font list should write");
+    output.write_le(&font_list).expect("font list should write");
     let bytes = output.into_inner();
 
     assert_eq!(&bytes[..4], b"fnl1");
-    assert_eq!(u16::from_be_bytes(bytes[8..10].try_into().unwrap()), 2);
-    assert_eq!(u32::from_be_bytes(bytes[10..14].try_into().unwrap()), 0x12);
+    assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 2);
+    assert_eq!(u32::from_le_bytes(bytes[12..16].try_into().unwrap()), 8);
 
     let parsed: FontList = Cursor::new(bytes)
-        .read_be()
+        .read_le()
         .expect("font list should parse");
     assert_eq!(parsed.filenames[0].as_slice(), b"main.bffnt");
     assert_eq!(parsed.filenames[1].as_slice(), b"icons.bffnt");

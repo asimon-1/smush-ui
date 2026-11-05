@@ -6,10 +6,10 @@ use binrw::{BinReaderExt, BinWriterExt, NullString};
 #[rustfmt::skip]
 const TEXTURE_LIST: &[u8] = &[
     b't', b'x', b'l', b'1', // Magic
-    0x00, 0x00, 0x00, 0x1e, // Section size
-    0x00, 0x02, // Filename count
-    0x00, 0x00, 0x00, 0x12, // Offset to "foo"
-    0x00, 0x00, 0x00, 0x16, // Offset to "bar.png"
+    0x20, 0x00, 0x00, 0x00, // Section size
+    0x02, 0x00, 0x00, 0x00, // Filename count
+    0x08, 0x00, 0x00, 0x00, // Offset to "foo"
+    0x0c, 0x00, 0x00, 0x00, // Offset to "bar.png"
     b'f', b'o', b'o', 0x00,
     b'b', b'a', b'r', b'.', b'p', b'n', b'g', 0x00,
 ];
@@ -17,7 +17,7 @@ const TEXTURE_LIST: &[u8] = &[
 #[test]
 fn reads_section_relative_filename_offsets() {
     let mut input = Cursor::new(TEXTURE_LIST);
-    let texture_list: TextureList = input.read_be().expect("fixture should parse");
+    let texture_list: TextureList = input.read_le().expect("fixture should parse");
 
     assert_eq!(texture_list.filenames[0].as_slice(), b"foo");
     assert_eq!(texture_list.filenames[1].as_slice(), b"bar.png");
@@ -32,7 +32,7 @@ fn writes_offsets_and_size_from_filenames() {
     let mut output = Cursor::new(Vec::new());
 
     output
-        .write_be(&texture_list)
+        .write_le(&texture_list)
         .expect("texture list should write");
 
     assert_eq!(output.into_inner(), TEXTURE_LIST);
@@ -45,14 +45,14 @@ fn round_trips_an_empty_list() {
     };
     let mut output = Cursor::new(Vec::new());
     output
-        .write_be(&texture_list)
+        .write_le(&texture_list)
         .expect("empty texture list should write");
     let bytes = output.into_inner();
 
-    assert_eq!(bytes, b"txl1\0\0\0\x0a\0\0");
+    assert_eq!(bytes, b"txl1\x0c\0\0\0\0\0\0\0");
 
     let parsed: TextureList = Cursor::new(bytes)
-        .read_be()
+        .read_le()
         .expect("empty list should parse");
     assert!(parsed.filenames.is_empty());
 }
@@ -60,10 +60,10 @@ fn round_trips_an_empty_list() {
 #[test]
 fn round_trips_nonempty() {
     let mut input = Cursor::new(TEXTURE_LIST);
-    let texture_list: TextureList = input.read_be().expect("fixture should parse");
+    let texture_list: TextureList = input.read_le().expect("fixture should parse");
     let mut output = Cursor::new(Vec::new());
     output
-        .write_be(&texture_list)
+        .write_le(&texture_list)
         .expect("fixture should write");
     let bytes = output.into_inner();
     assert_eq!(bytes, TEXTURE_LIST);

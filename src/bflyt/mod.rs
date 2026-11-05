@@ -1,4 +1,4 @@
-use binrw::binrw;
+use binrw::{BinRead, BinResult, Endian, binrw, io::{Read, Seek, SeekFrom}};
 
 pub mod sections;
 use self::sections::{
@@ -14,8 +14,28 @@ pub struct Bflyt {
     pub filesize: u32,
     pub num_sections: u16,
     padding: [u8; 2],
-    #[br(count = num_sections)]
+    #[br(parse_with = |reader, endian, _: ()| read_sections(reader, endian, num_sections))]
     pub sections: Vec<Section>,
+}
+
+fn read_sections<R: Read + Seek>(
+    reader: &mut R,
+    endian: Endian,
+    count: u16,
+) -> BinResult<Vec<Section>> {
+    let mut sections = Vec::with_capacity(count as usize);
+
+    for _ in 0..count {
+        let start = reader.stream_position()?;
+        let section = Section::read_options(reader, endian, ())?;
+
+        reader.seek(SeekFrom::Start(start + 4))?;
+        let size = u32::read_options(reader, endian, ())?;
+        reader.seek(SeekFrom::Start(start + u64::from(size)))?;
+        sections.push(section);
+    }
+
+    Ok(sections)
 }
 
 #[binrw]
