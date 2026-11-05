@@ -6,15 +6,15 @@ use binrw::{BinReaderExt, BinWriterExt};
 #[rustfmt::skip]
 const BFLYT: &[u8] = &[
     b'F', b'L', b'Y', b'T', // Magic
-    0xfe, 0xff, // BOM
-    0x14, // Header size
+    0xff, 0xfe, // BOM
+    0x14, 0x00, // Header size
     0x02, 0x02, 0x00, 0x00, // Version
-    0x00, 0x00, 0x00, 0x34, // Filesize
-    0x00, 0x01, // Number of sections
+    0x35, 0x00, 0x00, 0x00, // Filesize
+    0x01, 0x00, // Number of sections
     0x00, 0x00, // Padding
     // lyt1 section
     b'l', b'y', b't', b'1', // Magic
-    0x00, 0x00, 0x00, 0x21, // Section Size
+    0x21, 0x00, 0x00, 0x00, // Section Size
     0x01, // Is Drawn from Middle
     0x00, 0x00, 0x00, // Padding
     0x41, 0x20, 0x00, 0x00, // Width
@@ -28,7 +28,7 @@ const BFLYT: &[u8] = &[
 fn reads_a_bflyt_layout() {
     let mut input = Cursor::new(BFLYT);
 
-    let _bflyt: Bflyt = input.read_be().expect("fixture should parse");
+    let _bflyt: Bflyt = input.read_le().expect("fixture should parse");
 
     assert_eq!(input.position(), BFLYT.len() as u64);
 }
@@ -36,10 +36,10 @@ fn reads_a_bflyt_layout() {
 #[test]
 fn writes_the_original_bflyt_bytes() {
     let mut input = Cursor::new(BFLYT);
-    let bflyt: Bflyt = input.read_be().expect("fixture should parse");
+    let bflyt: Bflyt = input.read_le().expect("fixture should parse");
     let mut output = Cursor::new(Vec::new());
 
-    output.write_be(&bflyt).expect("parsed layout should write");
+    output.write_le(&bflyt).expect("parsed layout should write");
 
     assert_eq!(output.into_inner(), BFLYT);
 }
@@ -47,9 +47,9 @@ fn writes_the_original_bflyt_bytes() {
 #[test]
 fn parses_fields() {
     let mut input = Cursor::new(BFLYT);
-    let _bflyt: Bflyt = input.read_be().expect("fixture should parse");
+    let _bflyt: Bflyt = input.read_le().expect("fixture should parse");
     assert_eq!(_bflyt.version, [0x2, 0x2, 0x0, 0x0]);
-    assert_eq!(_bflyt.filesize, 0x34);
+    assert_eq!(_bflyt.filesize, 0x35);
     assert_eq!(_bflyt.num_sections, 1);
     assert_eq!(_bflyt.sections.len(), 1);
     assert_eq!(
@@ -81,7 +81,7 @@ fn parses_every_real_bflyt_fixture() {
             panic!("{} should be readable: {error}", path.display())
         });
         let mut input = Cursor::new(bytes.as_slice());
-        let bflyt: Bflyt = input.read_be().unwrap_or_else(|error| {
+        let bflyt: Bflyt = input.read_le().unwrap_or_else(|error| {
             panic!("{} should parse: {error}", path.display())
         });
 

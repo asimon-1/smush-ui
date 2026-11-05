@@ -7,8 +7,8 @@ use self::sections::{
 };
 
 #[binrw]
-#[br(magic = b"FLYT\xfe\xff\x14")]
-#[bw(magic = b"FLYT\xfe\xff\x14")]
+#[br(little, magic = b"FLYT\xff\xfe\x14\x00")]
+#[bw(little, magic = b"FLYT\xff\xfe\x14\x00")]
 pub struct Bflyt {
     pub version: [u8; 4],
     pub filesize: u32,
