@@ -1,0 +1,66 @@
+use std::io::Cursor;
+
+use smush_ui::bflyt::sections::{
+    Color, MaterialInfo, PaneFlags, PaneInfo, PaneOrigin, Picture, Vec2, Vec3,
+};
+use binrw::{BinReaderExt, BinWriterExt};
+
+fn pane() -> PaneInfo {
+    PaneInfo {
+        flags: PaneFlags::default(),
+        origin: PaneOrigin::default(),
+        alpha: 0xff,
+        part_scaling: 0,
+        name: [0; 24],
+        user_data: [0; 8],
+        position: Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        rotation: Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        scale: Vec2 { x: 1.0, y: 1.0 },
+        size: Vec2 { x: 1.0, y: 1.0 },
+    }
+}
+fn color() -> Color {
+    Color {
+        red: 0,
+        green: 0,
+        blue: 0,
+        alpha: 0xff,
+    }
+}
+
+#[test]
+fn picture_writes_material_info_after_pane_info() {
+    let picture = Picture {
+        pane: pane(),
+        material: MaterialInfo {
+            top_left_color: color(),
+            top_right_color: color(),
+            bottom_left_color: color(),
+            bottom_right_color: color(),
+            material_index: 3,
+            texture_coordinates: vec![[
+                Vec2 { x: 0.0, y: 0.0 },
+                Vec2 { x: 1.0, y: 0.0 },
+                Vec2 { x: 0.0, y: 1.0 },
+                Vec2 { x: 1.0, y: 1.0 },
+            ]],
+        },
+    };
+    let mut output = Cursor::new(Vec::new());
+    output.write_be(&picture).unwrap();
+    let bytes = output.into_inner();
+
+    assert_eq!(u32::from_be_bytes(bytes[4..8].try_into().unwrap()), 0x88);
+    assert_eq!(u16::from_be_bytes(bytes[0x64..0x66].try_into().unwrap()), 3);
+    assert_eq!(u16::from_be_bytes(bytes[0x66..0x68].try_into().unwrap()), 1);
+
+    let _: Picture = Cursor::new(bytes).read_be().unwrap();
+}
