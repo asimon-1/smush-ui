@@ -1,6 +1,50 @@
-use binrw::binrw;
+use binrw::{BinRead, BinResult, Endian, Error as BinError, NullString, binrw};
 use serde::{Deserialize, Serialize};
-use std::io::{Error, ErrorKind};
+use std::io::{Cursor, Error, ErrorKind};
+
+pub(crate) fn align_up(size: usize, alignment: usize) -> usize {
+    debug_assert!(alignment.is_power_of_two());
+    (size + alignment - 1) & !(alignment - 1)
+}
+
+pub(crate) fn read_null_string_at(
+    bytes: &[u8],
+    offset: usize,
+    endian: Endian,
+) -> BinResult<String> {
+    let mut reader = Cursor::new(&bytes[offset..]);
+    NullString::read_options(&mut reader, endian, ())?
+        .try_into()
+        .map_err(|error| BinError::Custom {
+            pos: offset as u64,
+            err: Box::new(error),
+        })
+}
+
+pub(crate) fn write_u16(bytes: &mut Vec<u8>, value: u16, endian: Endian) {
+    bytes.extend_from_slice(&if endian == Endian::Little {
+        value.to_le_bytes()
+    } else {
+        value.to_be_bytes()
+    });
+}
+
+pub(crate) fn write_u32(bytes: &mut Vec<u8>, value: u32, endian: Endian) {
+    bytes.extend_from_slice(&if endian == Endian::Little {
+        value.to_le_bytes()
+    } else {
+        value.to_be_bytes()
+    });
+}
+
+pub(crate) fn write_u32_at(bytes: &mut [u8], offset: usize, value: u32, endian: Endian) {
+    let encoded = if endian == Endian::Little {
+        value.to_le_bytes()
+    } else {
+        value.to_be_bytes()
+    };
+    bytes[offset..offset + 4].copy_from_slice(&encoded);
+}
 
 pub(crate) fn fixed_string_to_string<const N: usize>(
     bytes: [u8; N],

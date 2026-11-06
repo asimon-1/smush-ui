@@ -1,7 +1,9 @@
 use std::io::Cursor;
 
 use binrw::{BinReaderExt, BinWriterExt};
-use smush_ui::bflyt::sections::{Control, ControlData, Material, User};
+use smush_ui::bflyt::sections::{
+    Control, ControlData, Material, User, UserData, UserDataEntry, UserDataValue,
+};
 
 #[test]
 fn round_trips_control_user_and_material_payloads() {
@@ -13,7 +15,13 @@ fn round_trips_control_user_and_material_payloads() {
         pane_names: vec!["PaneName".to_owned()],
         anim_names: vec!["AnimName".to_owned()],
     });
-    let user = User::new(vec![4, 5]);
+    let user = User::new(UserData {
+        entries: vec![UserDataEntry {
+            name: "Value".to_owned(),
+            value: UserDataValue::Integers(vec![4, 5]),
+            reserved: 0,
+        }],
+    });
     let material = Material::new(vec![6, 7, 8, 9]);
 
     let mut output = Cursor::new(Vec::new());
@@ -30,7 +38,8 @@ fn round_trips_control_user_and_material_payloads() {
     let parsed_control: Control = input.read_be().expect("control should parse");
     assert_eq!(parsed_control.data.control_name, "Control");
     assert_eq!(parsed_control.data.pane_bindings, ["Pane"]);
-    let _: User = input.read_be().expect("user data should parse");
+    let parsed_user: User = input.read_be().expect("user data should parse");
+    assert_eq!(parsed_user.data.entries[0].name, "Value");
     let _: Material = input.read_be().expect("material should parse");
     assert_eq!(input.position(), bytes.len() as u64);
 }
