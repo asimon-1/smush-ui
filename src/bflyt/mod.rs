@@ -1,6 +1,6 @@
 use binrw::{
-    BinRead, BinResult, Endian, binrw,
-    io::{Read, Seek, SeekFrom},
+    BinRead, BinResult, BinWrite, Endian, binrw,
+    io::{Cursor, Read, Seek, SeekFrom},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
 
@@ -15,11 +15,20 @@ use self::sections::{
 #[bw(little, magic = b"FLYT\xff\xfe\x14\x00")]
 pub struct Bflyt {
     pub version: [u8; 4],
+    #[bw(try_map = |_: &u32| serialized_filesize(sections))]
     pub filesize: u32,
     #[bw(map = |_: &u32| sections.len() as u32)]
     pub num_sections: u32,
     #[br(parse_with = |reader, endian, _: ()| read_sections(reader, endian, num_sections))]
     pub sections: Vec<Section>,
+}
+
+fn serialized_filesize(sections: &[Section]) -> BinResult<u32> {
+    let mut bytes = Cursor::new(Vec::new());
+    for section in sections {
+        section.write_options(&mut bytes, Endian::Little, ())?;
+    }
+    Ok((0x14 + bytes.into_inner().len()) as u32)
 }
 
 fn read_sections<R: Read + Seek>(
@@ -372,9 +381,8 @@ fn binary_sections(sections: Vec<JsonSection>) -> Vec<Section> {
 impl Serialize for Bflyt {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let sections = json_sections::<S::Error>(&self.sections)?;
-        let mut state = serializer.serialize_struct("Bflyt", 3)?;
+        let mut state = serializer.serialize_struct("Bflyt", 2)?;
         state.serialize_field("version", &self.version)?;
-        state.serialize_field("filesize", &self.filesize)?;
         state.serialize_field("sections", &sections)?;
         state.end()
     }
@@ -385,7 +393,8 @@ impl<'de> Deserialize<'de> for Bflyt {
         #[derive(Deserialize)]
         struct JsonBflyt {
             version: [u8; 4],
-            filesize: u32,
+            #[serde(default, rename = "filesize")]
+            _filesize: Option<u32>,
             #[serde(default, rename = "num_sections")]
             _num_sections: Option<u32>,
             sections: Vec<JsonSection>,
@@ -395,7 +404,7 @@ impl<'de> Deserialize<'de> for Bflyt {
         let sections = binary_sections(value.sections);
         Ok(Self {
             version: value.version,
-            filesize: value.filesize,
+            filesize: 0,
             num_sections: sections.len() as u32,
             sections,
         })

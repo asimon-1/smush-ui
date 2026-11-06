@@ -74,6 +74,7 @@ fn serializes_to_json_and_back() {
     let bflyt: Bflyt = input.read_le().expect("fixture should parse");
 
     let json = serde_json::to_string_pretty(&bflyt).expect("layout should serialize to JSON");
+    assert!(!json.contains("\"filesize\""));
     assert!(!json.contains("\"num_sections\""));
     assert!(json.contains("\"is_drawn_from_middle\": true"));
     let restored: Bflyt = serde_json::from_str(&json).expect("JSON should deserialize to a layout");
@@ -83,6 +84,29 @@ fn serializes_to_json_and_back() {
         .write_le(&restored)
         .expect("JSON layout should write");
     assert_eq!(output.into_inner(), BFLYT);
+}
+
+#[test]
+fn derives_filesize_after_json_changes_section_size() {
+    let bflyt: Bflyt = Cursor::new(BFLYT).read_le().expect("fixture should parse");
+    let mut json = serde_json::to_value(&bflyt).expect("layout should serialize to JSON");
+    json["sections"][0]["Layout"]["name"] = "A longer layout name".into();
+    let restored: Bflyt = serde_json::from_value(json).expect("edited JSON should deserialize");
+    assert_eq!(restored.filesize, 0);
+
+    let mut output = Cursor::new(Vec::new());
+    output
+        .write_le(&restored)
+        .expect("edited JSON layout should write");
+    let bytes = output.into_inner();
+    assert_eq!(
+        u32::from_le_bytes(bytes[0x0c..0x10].try_into().unwrap()) as usize,
+        bytes.len()
+    );
+    let reparsed: Bflyt = Cursor::new(bytes.clone())
+        .read_le()
+        .expect("written layout should parse");
+    assert_eq!(reparsed.filesize as usize, bytes.len());
 }
 
 #[test]
