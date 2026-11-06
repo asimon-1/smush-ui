@@ -4,9 +4,9 @@ use bilge::prelude::*;
 use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::Section;
 use smush_ui::bflyt::sections::{
-    Bounding, Color, MaterialInfo, Pane, PaneFlags, PaneInfo, PaneOrigin, PaneUsageFlags, Parts,
-    PartsData, PartsMaterialUsageFlags, PartsPaneBasicInfo, PartsProperty, Picture, Textbox,
-    TextboxUsageFlags, User, UserData, Vec2, Vec3, Window,
+    Bounding, Color, MaterialInfo, Pane, PaneFlags, PaneInfo, PaneOrigin, PaneUsageFlags,
+    PartScalingFlags, Parts, PartsData, PartsMaterialUsageFlags, PartsPaneBasicInfo, PartsProperty,
+    Picture, Textbox, TextboxUsageFlags, User, UserData, Vec2, Vec3, Window,
 };
 
 fn pane(name: &str) -> PaneInfo {
@@ -14,7 +14,7 @@ fn pane(name: &str) -> PaneInfo {
         flags: PaneFlags::default(),
         origin: PaneOrigin::default(),
         alpha: 0xff,
-        part_scaling: 0,
+        part_scaling: PartScalingFlags::default(),
         name: name.to_owned(),
         user_name: String::new(),
         position: Vec3 {

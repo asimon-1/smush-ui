@@ -372,10 +372,9 @@ fn binary_sections(sections: Vec<JsonSection>) -> Vec<Section> {
 impl Serialize for Bflyt {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let sections = json_sections::<S::Error>(&self.sections)?;
-        let mut state = serializer.serialize_struct("Bflyt", 4)?;
+        let mut state = serializer.serialize_struct("Bflyt", 3)?;
         state.serialize_field("version", &self.version)?;
         state.serialize_field("filesize", &self.filesize)?;
-        state.serialize_field("num_sections", &(self.sections.len() as u32))?;
         state.serialize_field("sections", &sections)?;
         state.end()
     }
@@ -387,8 +386,8 @@ impl<'de> Deserialize<'de> for Bflyt {
         struct JsonBflyt {
             version: [u8; 4],
             filesize: u32,
-            #[serde(rename = "num_sections")]
-            _num_sections: u32,
+            #[serde(default, rename = "num_sections")]
+            _num_sections: Option<u32>,
             sections: Vec<JsonSection>,
         }
 

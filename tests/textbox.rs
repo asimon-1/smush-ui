@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::{
-    Color, LineTransform, PaneFlags, PaneInfo, PaneOrigin, PerCharacterTransform,
+    Color, LineTransform, PaneFlags, PaneInfo, PaneOrigin, PartScalingFlags, PerCharacterTransform,
     PerCharacterTransformLoopMode, TextAlignment, TextHorizontalOrigin, TextOrigin,
     TextVerticalOrigin, Textbox, Vec2, Vec3,
 };
@@ -20,7 +20,7 @@ fn pane() -> PaneInfo {
         flags: PaneFlags::default(),
         origin: PaneOrigin::default(),
         alpha: 0xff,
-        part_scaling: 0,
+        part_scaling: PartScalingFlags::default(),
         name: String::new(),
         user_name: String::new(),
         position: Vec3 {

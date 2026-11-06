@@ -9,8 +9,10 @@ pub struct Layout {
     #[serde(skip)]
     #[bw(map = |_: &u32| 0x1C + name.len() as u32 + 1)]
     pub size: u32,
-    /// Nonzero when the layout is drawn from its middle.
-    pub is_drawn_from_middle: u8,
+    /// Whether the layout is drawn from its middle rather than its origin.
+    #[br(map = |value: u8| value != 0)]
+    #[bw(map = |value: &bool| u8::from(*value))]
+    pub is_drawn_from_middle: bool,
     #[serde(skip)]
     padding: [u8; 3],
     pub width: f32,

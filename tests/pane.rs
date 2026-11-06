@@ -1,9 +1,15 @@
 use std::io::Cursor;
 
+use bilge::prelude::*;
 use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::{
-    Bounding, HorizontalOrigin, Pane, PaneFlags, PaneInfo, PaneOrigin, Vec2, Vec3, VerticalOrigin,
+    Bounding, HorizontalOrigin, Pane, PaneFlags, PaneInfo, PaneOrigin, PartScalingFlags, Vec2,
+    Vec3, VerticalOrigin,
 };
+
+fn part_scaling() -> PartScalingFlags {
+    PartScalingFlags::from(u8::new(0x7f))
+}
 
 fn pane_info() -> PaneInfo {
     let mut flags = PaneFlags::default();
@@ -18,7 +24,7 @@ fn pane_info() -> PaneInfo {
             VerticalOrigin::Top,
         ),
         alpha: 0xff,
-        part_scaling: 0,
+        part_scaling: part_scaling(),
         name: String::new(),
         user_name: String::new(),
         position: Vec3 {
@@ -50,9 +56,11 @@ fn pane_and_bounding_have_the_documented_size() {
     );
     assert_eq!(bytes[8], 0x03);
     assert_eq!(bytes[9], 0x69);
+    assert_eq!(bytes[11], 0x7f);
 
     let mut input = Cursor::new(bytes);
-    let _: Pane = input.read_be().unwrap();
+    let parsed: Pane = input.read_be().unwrap();
+    assert_eq!(parsed.pane.part_scaling, part_scaling());
     let _: Bounding = input.read_be().unwrap();
     assert_eq!(input.position(), 0xa8);
 }

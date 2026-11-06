@@ -19,8 +19,8 @@ pub mod window;
 
 pub use bounding::Bounding;
 pub use common::{
-    Color, HorizontalOrigin, MaterialInfo, PaneFlags, PaneInfo, PaneOrigin, Vec2, Vec3,
-    VerticalOrigin,
+    Color, HorizontalOrigin, MaterialInfo, PaneFlags, PaneInfo, PaneOrigin, PartScalingFlags, Vec2,
+    Vec3, VerticalOrigin,
 };
 pub use control::{Control, ControlData};
 pub use font_list::FontList;

@@ -28,7 +28,14 @@ const BFLYT: &[u8] = &[
 fn reads_a_bflyt_layout() {
     let mut input = Cursor::new(BFLYT);
 
-    let _bflyt: Bflyt = input.read_le().expect("fixture should parse");
+    let bflyt: Bflyt = input.read_le().expect("fixture should parse");
+
+    assert!(
+        bflyt.sections[0]
+            .as_layout()
+            .expect("section should be a layout")
+            .is_drawn_from_middle
+    );
 
     assert_eq!(input.position(), BFLYT.len() as u64);
 }
@@ -67,6 +74,8 @@ fn serializes_to_json_and_back() {
     let bflyt: Bflyt = input.read_le().expect("fixture should parse");
 
     let json = serde_json::to_string_pretty(&bflyt).expect("layout should serialize to JSON");
+    assert!(!json.contains("\"num_sections\""));
+    assert!(json.contains("\"is_drawn_from_middle\": true"));
     let restored: Bflyt = serde_json::from_str(&json).expect("JSON should deserialize to a layout");
     let mut output = Cursor::new(Vec::new());
 
@@ -251,5 +260,23 @@ fn textbox_metadata_is_typed_in_json() {
 
     let restored: Bflyt =
         serde_json::from_str(&json).expect("typed textbox JSON should deserialize");
+    assert_eq!(restored.sections.len(), bflyt.sections.len());
+}
+
+#[test]
+fn smaller_scalar_fields_are_typed_in_json() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/info_training.bflyt");
+    let bytes = fs::read(path).expect("scalar fixture should be readable");
+    let bflyt: Bflyt = Cursor::new(bytes)
+        .read_le()
+        .expect("scalar fixture should parse");
+
+    let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
+    assert!(!json.contains("\"num_sections\""));
+    assert!(json.contains("\"is_drawn_from_middle\":true"));
+    assert!(json.contains("\"part_scaling\":{\"unk1\":false"));
+
+    let restored: Bflyt =
+        serde_json::from_str(&json).expect("typed scalar JSON should deserialize");
     assert_eq!(restored.sections.len(), bflyt.sections.len());
 }

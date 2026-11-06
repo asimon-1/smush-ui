@@ -111,6 +111,18 @@ pub struct PaneOrigin {
     pub parent_y: VerticalOrigin,
 }
 
+#[bitsize(8, new = pub)]
+#[derive(
+    Clone, Copy, DebugBits, DefaultBits, DeserializeBits, Eq, FromBits, PartialEq, SerializeBits,
+)]
+pub struct PartScalingFlags {
+    pub unk1: bool,
+    pub unk2: bool,
+    pub unk3: bool,
+    /// Unspecified flag bits, retained when reading and writing.
+    pub reserved: u5,
+}
+
 #[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct Color {
@@ -149,8 +161,10 @@ pub struct PaneInfo {
     pub origin: PaneOrigin,
     /// Opacity value.
     pub alpha: u8,
-    /// Part scaling mode.
-    pub part_scaling: u8,
+    /// Scaling mode for a referenced parts layout.
+    #[br(map = |bits: u8| PartScalingFlags::from(u8::new(bits)))]
+    #[bw(map = |flags: &PartScalingFlags| u8::from(*flags).value())]
+    pub part_scaling: PartScalingFlags,
     /// NUL-terminated pane name in a fixed 24-byte buffer.
     #[br(try_map = fixed_string_to_string::<24>)]
     #[bw(try_map = string_to_fixed_string::<24>)]
