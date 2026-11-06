@@ -5,7 +5,7 @@ use binrw::{BinRead, BinWrite, BinWriterExt};
 use smush_ui::bflyt::sections::material::{
     AlphaCompare, BlendMode, FontShadowParameter, IndirectTextureTransform, MaterialFlags,
     ProjectionTextureParameter, TevStage, TextureCoordinateGenerator, TextureFilterFlags,
-    TextureReference, TextureTransform, TextureWrapFlags, TextureWrapMode,
+    TextureReference, TextureTransform, TextureWrapFlags, TextureWrapMode, decode_material_payload,
 };
 use smush_ui::bflyt::sections::{Color, Vec2};
 
@@ -31,6 +31,29 @@ fn color() -> Color {
 
 fn vec2() -> Vec2 {
     Vec2 { x: 1.5, y: -2.0 }
+}
+
+fn material_record(name: &str, flags: u32, variable_data: Vec<u8>) -> Vec<u8> {
+    let mut record = vec![0; 44];
+    record[..name.len()].copy_from_slice(name.as_bytes());
+    record[28..32].copy_from_slice(&flags.to_le_bytes());
+    record[32..36].copy_from_slice(&0x1234_5678u32.to_le_bytes());
+    record.extend(variable_data);
+    record
+}
+
+fn material_section(records: Vec<Vec<u8>>) -> Vec<u8> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&(records.len() as u16).to_le_bytes());
+    payload.extend_from_slice(&0x9876u16.to_le_bytes());
+    payload.resize(4 + records.len() * 4, 0);
+
+    for (index, record) in records.iter().enumerate() {
+        let offset = (payload.len() + 8) as u32;
+        payload[4 + index * 4..8 + index * 4].copy_from_slice(&offset.to_le_bytes());
+        payload.extend(record);
+    }
+    payload
 }
 
 #[test]
@@ -87,7 +110,7 @@ fn texture_reference_round_trips_packed_flags() {
 }
 
 #[test]
-fn version_8_component_models_have_fixed_serialized_sizes() {
+fn component_models_have_fixed_serialized_sizes() {
     assert_eq!(
         encoded_len(&TextureReference {
             texture_index: -1,
@@ -160,4 +183,87 @@ fn version_8_component_models_have_fixed_serialized_sizes() {
         }),
         8
     );
+}
+
+#[test]
+fn decodes_empty_minimal_and_multiple_materials() {
+    let empty =
+        decode_material_payload(&[0, 0, 0, 0]).expect("empty material section should decode");
+    assert!(empty.materials.is_empty());
+
+    let payload = material_section(vec![
+        material_record("first", 0, Vec::new()),
+        material_record("second", 0, Vec::new()),
+    ]);
+    let decoded =
+        decode_material_payload(&payload).expect("minimal material records should decode");
+    assert_eq!(decoded.reserved, 0x9876);
+    assert_eq!(decoded.materials.len(), 2);
+    assert_eq!(decoded.materials[0].name, "first");
+    assert_eq!(decoded.materials[1].name, "second");
+    assert_eq!(decoded.materials[0].unknown_header_value, 0x1234_5678);
+}
+
+#[test]
+fn decodes_all_flag_controlled_components() {
+    let flags = 2
+        | (1 << 2)
+        | (1 << 4)
+        | (2 << 6)
+        | (1 << 9)
+        | (1 << 10)
+        | (1 << 11)
+        | (1 << 12)
+        | (1 << 13)
+        | (1 << 14)
+        | (2 << 15)
+        | (1 << 17)
+        | (1 << 18)
+        | (1 << 19);
+    let variable_data = vec![0; 8 + 20 + 16 + 8 + 8 + 4 + 4 + 12 + 40 + 8];
+    let payload = material_section(vec![material_record("complete", flags, variable_data)]);
+    let material = decode_material_payload(&payload)
+        .expect("all material components should decode")
+        .materials
+        .pop()
+        .unwrap();
+
+    assert_eq!(material.texture_references.len(), 2);
+    assert_eq!(material.texture_transforms.len(), 1);
+    assert_eq!(material.texture_coordinate_generators.len(), 1);
+    assert_eq!(material.tev_stages.len(), 2);
+    assert!(material.alpha_compare.is_some());
+    assert!(material.blend_mode.is_some());
+    assert!(material.separate_blend_logic_mode.is_some());
+    assert!(material.indirect_texture_transform.is_some());
+    assert_eq!(material.projection_texture_parameters.len(), 2);
+    assert!(material.font_shadow_parameter.is_some());
+    assert!(material.flags.texture_only());
+    assert!(material.flags.alpha_interpolation());
+    assert!(material.flags.unk1());
+    assert_eq!(material.flags.reserved_i().value(), 1);
+}
+
+#[test]
+fn rejects_malformed_material_tables_and_records() {
+    assert!(decode_material_payload(&[1, 0, 0, 0]).is_err());
+
+    let mut offset_into_table = vec![1, 0, 0, 0, 8, 0, 0, 0];
+    offset_into_table.extend(material_record("bad", 0, Vec::new()));
+    assert!(decode_material_payload(&offset_into_table).is_err());
+
+    let mut descending_offsets = vec![2, 0, 0, 0];
+    descending_offsets.extend_from_slice(&28u32.to_le_bytes());
+    descending_offsets.extend_from_slice(&24u32.to_le_bytes());
+    descending_offsets.resize(20, 0);
+    assert!(decode_material_payload(&descending_offsets).is_err());
+
+    let out_of_range = vec![1, 0, 0, 0, 100, 0, 0, 0];
+    assert!(decode_material_payload(&out_of_range).is_err());
+
+    let truncated_optional = material_section(vec![material_record("short", 1 << 9, Vec::new())]);
+    assert!(decode_material_payload(&truncated_optional).is_err());
+
+    let trailing_data = material_section(vec![material_record("extra", 0, vec![0])]);
+    assert!(decode_material_payload(&trailing_data).is_err());
 }

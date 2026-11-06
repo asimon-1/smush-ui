@@ -1,8 +1,9 @@
 use bilge::prelude::*;
-use binrw::binrw;
+use binrw::{BinRead, BinResult, Endian, Error as BinError, binrw};
 use serde::{Deserialize, Serialize};
+use std::io::{Cursor, Error, ErrorKind};
 
-use super::{Color, Vec2};
+use super::{Color, Vec2, common::fixed_string_to_string};
 
 #[bitsize(32, new = pub)]
 #[derive(
@@ -85,7 +86,6 @@ pub struct TextureTransform {
     pub scale: Vec2,
 }
 
-/// Version-8+ texture-coordinate-generator payload.
 #[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct TextureCoordinateGenerator {
@@ -141,6 +141,141 @@ pub struct ProjectionTextureParameter {
 pub struct FontShadowParameter {
     pub black_color: Color,
     pub white_color: Color,
+}
+
+#[derive(BinRead, Serialize, Deserialize)]
+pub struct MaterialEntry {
+    #[br(try_map = fixed_string_to_string::<0x1c>)]
+    pub name: String,
+    #[br(map = |raw: u32| MaterialFlags::from(u32::new(raw)))]
+    pub flags: MaterialFlags,
+    pub unknown_header_value: u32,
+    pub black_color: Color,
+    pub white_color: Color,
+    #[br(count = flags.texture_reference_count().value())]
+    pub texture_references: Vec<TextureReference>,
+    #[br(count = flags.texture_transform_count().value())]
+    pub texture_transforms: Vec<TextureTransform>,
+    #[br(count = flags.texture_coordinate_generator_count().value())]
+    pub texture_coordinate_generators: Vec<TextureCoordinateGenerator>,
+    #[br(count = flags.tev_stage_count().value())]
+    pub tev_stages: Vec<TevStage>,
+    #[br(if(flags.has_alpha_compare()))]
+    pub alpha_compare: Option<AlphaCompare>,
+    #[br(if(flags.has_blend_mode()))]
+    pub blend_mode: Option<BlendMode>,
+    #[br(if(flags.has_separate_blend_logic_mode()))]
+    pub separate_blend_logic_mode: Option<BlendMode>,
+    #[br(if(flags.has_indirect_texture_transform()))]
+    pub indirect_texture_transform: Option<IndirectTextureTransform>,
+    #[br(count = flags.projection_texture_parameter_count().value())]
+    pub projection_texture_parameters: Vec<ProjectionTextureParameter>,
+    #[br(if(flags.has_font_shadow_parameter()))]
+    pub font_shadow_parameter: Option<FontShadowParameter>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DecodedMaterialSection {
+    pub reserved: u16,
+    pub materials: Vec<MaterialEntry>,
+}
+
+pub fn decode_material_payload(payload: &[u8]) -> BinResult<DecodedMaterialSection> {
+    if payload.len() < 4 {
+        return invalid_material_payload(0, "material count table is truncated");
+    }
+
+    let mut header = Cursor::new(payload);
+    let material_count = u16::read_options(&mut header, Endian::Little, ())
+        .map_err(|_| material_error(0, "material count table is truncated"))?
+        as usize;
+    let reserved = u16::read_options(&mut header, Endian::Little, ())
+        .map_err(|_| material_error(2, "material count table is truncated"))?;
+    let table_end = 4usize
+        .checked_add(
+            material_count
+                .checked_mul(4)
+                .ok_or_else(|| material_error(0, "material offset table is too large"))?,
+        )
+        .ok_or_else(|| material_error(0, "material offset table is too large"))?;
+    if table_end > payload.len() {
+        return invalid_material_payload(0, "material offset table is truncated");
+    }
+
+    let mut offsets = Vec::with_capacity(material_count);
+    let mut previous_offset = 8 + table_end;
+    for index in 0..material_count {
+        let offset = u32::read_options(&mut header, Endian::Little, ())
+            .map_err(|_| material_error(4 + index * 4, "material offset table is truncated"))?
+            as usize;
+        if offset < 8 + table_end {
+            return invalid_material_payload(
+                4 + index * 4,
+                "material offset points into the offset table",
+            );
+        }
+        if offset > payload.len() + 8 {
+            return invalid_material_payload(
+                4 + index * 4,
+                "material offset is outside the section",
+            );
+        }
+        if offset < previous_offset {
+            return invalid_material_payload(4 + index * 4, "material offsets are not monotonic");
+        }
+        previous_offset = offset;
+        offsets.push(offset);
+    }
+
+    let mut materials = Vec::with_capacity(material_count);
+    for (index, &section_offset) in offsets.iter().enumerate() {
+        let record_end = offsets.get(index + 1).copied().unwrap_or(payload.len() + 8);
+        let record_start = section_offset - 8;
+        let record_end = record_end - 8;
+        materials.push(decode_material_record(
+            &payload[record_start..record_end],
+            section_offset,
+        )?);
+    }
+
+    Ok(DecodedMaterialSection {
+        reserved,
+        materials,
+    })
+}
+
+fn decode_material_record(record: &[u8], section_offset: usize) -> BinResult<MaterialEntry> {
+    if record.len() < 44 {
+        return invalid_material_payload(section_offset, "material record header is truncated");
+    }
+
+    let mut reader = Cursor::new(record);
+    let material = MaterialEntry::read_options(&mut reader, Endian::Little, ()).map_err(|_| {
+        material_error(
+            section_offset + reader.position() as usize,
+            "material record is truncated",
+        )
+    })?;
+
+    if reader.position() != record.len() as u64 {
+        return invalid_material_payload(
+            section_offset + reader.position() as usize,
+            "material record has unrecognized trailing bytes",
+        );
+    }
+
+    Ok(material)
+}
+
+fn invalid_material_payload<T>(position: usize, message: impl Into<String>) -> BinResult<T> {
+    Err(material_error(position, message))
+}
+
+fn material_error(position: usize, message: impl Into<String>) -> BinError {
+    BinError::Custom {
+        pos: position as u64,
+        err: Box::new(Error::new(ErrorKind::InvalidData, message.into())),
+    }
 }
 
 #[derive(Serialize, Deserialize)]
