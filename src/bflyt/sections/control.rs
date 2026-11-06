@@ -1,4 +1,4 @@
-use super::common::{fixed_name_to_string, string_to_fixed_name};
+use super::common::{fixed_string_to_string, string_to_fixed_string};
 use binrw::{BinRead, BinResult, Endian, Error, NullString, binrw};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Seek, Write};
@@ -79,12 +79,12 @@ fn read_control_data<R: Read + Seek>(
             })
     };
     let read_fixed_name_at = |offset: usize| {
-        fixed_name_to_string(payload[offset..offset + 24].try_into().unwrap()).map_err(|error| {
-            Error::Custom {
+        fixed_string_to_string::<24>(payload[offset..offset + 24].try_into().unwrap()).map_err(
+            |error| Error::Custom {
                 pos: offset as u64,
                 err: Box::new(error),
-            }
-        })
+            },
+        )
     };
     let read_string_table = |table_offset: usize, count: usize| -> BinResult<Vec<String>> {
         (0..count)
@@ -149,7 +149,7 @@ fn write_control_data<W: Write + Seek>(
     let bindings_offset = section_relative_offset(p.len());
     for binding in &data.pane_bindings {
         p.extend(
-            string_to_fixed_name(binding).map_err(|error| Error::Custom {
+            string_to_fixed_string::<24>(binding).map_err(|error| Error::Custom {
                 pos: 0,
                 err: Box::new(error),
             })?,

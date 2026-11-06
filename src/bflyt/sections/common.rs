@@ -2,7 +2,9 @@ use binrw::binrw;
 use serde::{Deserialize, Serialize};
 use std::io::{Error, ErrorKind};
 
-pub(crate) fn fixed_name_to_string(bytes: [u8; 24]) -> Result<String, std::str::Utf8Error> {
+pub(crate) fn fixed_string_to_string<const N: usize>(
+    bytes: [u8; N],
+) -> Result<String, std::str::Utf8Error> {
     let length = bytes
         .iter()
         .position(|&byte| byte == 0)
@@ -10,14 +12,14 @@ pub(crate) fn fixed_name_to_string(bytes: [u8; 24]) -> Result<String, std::str::
     std::str::from_utf8(&bytes[..length]).map(str::to_owned)
 }
 
-pub(crate) fn string_to_fixed_name(name: &String) -> Result<[u8; 24], Error> {
-    if name.len() > 24 {
+pub(crate) fn string_to_fixed_string<const N: usize>(name: &String) -> Result<[u8; N], Error> {
+    if name.len() > N {
         return Err(Error::new(
             ErrorKind::InvalidInput,
-            "fixed BFLYT names cannot exceed 24 bytes",
+            format!("fixed BFLYT strings cannot exceed {N} bytes"),
         ));
     }
-    let mut bytes = [0; 24];
+    let mut bytes = [0; N];
     bytes[..name.len()].copy_from_slice(name.as_bytes());
     Ok(bytes)
 }
@@ -171,10 +173,13 @@ pub struct PaneInfo {
     /// Part scaling mode.
     pub part_scaling: u8,
     /// NUL-terminated pane name in a fixed 24-byte buffer.
-    #[br(try_map = fixed_name_to_string)]
-    #[bw(try_map = string_to_fixed_name)]
+    #[br(try_map = fixed_string_to_string::<24>)]
+    #[bw(try_map = string_to_fixed_string::<24>)]
     pub name: String,
-    pub user_data: [u8; 8],
+    /// NUL-terminated user name in a fixed 8-byte buffer.
+    #[br(try_map = fixed_string_to_string::<8>)]
+    #[bw(try_map = string_to_fixed_string::<8>)]
+    pub user_name: String,
     pub position: Vec3,
     pub rotation: Vec3,
     pub scale: Vec2,

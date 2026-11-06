@@ -11,7 +11,7 @@ fn window_writes_fixed_fields_and_trailing_data() {
         alpha: 0xff,
         part_scaling: 0,
         name: String::new(),
-        user_data: [0; 8],
+        user_name: String::new(),
         position: Vec3 {
             x: 0.0,
             y: 0.0,

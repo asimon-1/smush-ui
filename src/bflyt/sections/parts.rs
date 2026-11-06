@@ -1,14 +1,14 @@
 use binrw::binrw;
 use serde::{Deserialize, Serialize};
 
-use super::common::{fixed_name_to_string, string_to_fixed_name};
+use super::common::{fixed_string_to_string, string_to_fixed_string};
 use super::{PaneInfo, Vec2};
 
 #[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct PartsProperty {
-    #[br(try_map = fixed_name_to_string)]
-    #[bw(try_map = string_to_fixed_name)]
+    #[br(try_map = fixed_string_to_string::<24>)]
+    #[bw(try_map = string_to_fixed_string::<24>)]
     pub name: String,
     pub usage_flags: u8,
     pub basic_usage_flags: u8,
