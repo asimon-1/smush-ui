@@ -22,7 +22,7 @@ pub use common::{
     Color, HorizontalOrigin, MaterialInfo, PaneFlags, PaneInfo, PaneOrigin, Vec2, Vec3,
     VerticalOrigin,
 };
-pub use control::Control;
+pub use control::{Control, ControlData};
 pub use font_list::FontList;
 pub use group::Group;
 pub use group_end::GroupEnd;
