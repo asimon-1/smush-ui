@@ -6,18 +6,17 @@ use smush_ui::bflyt::sections::{
 };
 
 fn pane_info() -> PaneInfo {
+    let mut flags = PaneFlags::default();
+    flags.set_is_visible(true);
+    flags.set_transmits_alpha_to_children(true);
     PaneInfo {
-        flags: PaneFlags {
-            is_visible: true,
-            transmits_alpha_to_children: true,
-            reserved: 0,
-        },
-        origin: PaneOrigin {
-            x: HorizontalOrigin::Left,
-            y: VerticalOrigin::Bottom,
-            parent_x: HorizontalOrigin::Right,
-            parent_y: VerticalOrigin::Top,
-        },
+        flags,
+        origin: PaneOrigin::new(
+            HorizontalOrigin::Left,
+            VerticalOrigin::Bottom,
+            HorizontalOrigin::Right,
+            VerticalOrigin::Top,
+        ),
         alpha: 0xff,
         part_scaling: 0,
         name: String::new(),

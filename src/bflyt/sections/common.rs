@@ -1,4 +1,5 @@
 use binrw::{BinRead, BinResult, Endian, Error as BinError, NullString, binrw};
+use bilge::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Error, ErrorKind};
 
@@ -68,112 +69,46 @@ pub(crate) fn string_to_fixed_string<const N: usize>(name: &String) -> Result<[u
     Ok(bytes)
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[bitsize(8, new = pub)]
+#[derive(
+    Clone, Copy, DebugBits, DefaultBits, DeserializeBits, Eq, FromBits, PartialEq, SerializeBits,
+)]
 pub struct PaneFlags {
     pub is_visible: bool,
     pub transmits_alpha_to_children: bool,
     /// Unspecified flag bits, retained when reading and writing.
-    pub reserved: u8,
+    pub reserved: u6,
 }
 
-impl PaneFlags {
-    fn from_bits(bits: u8) -> Self {
-        Self {
-            is_visible: bits & 0x01 != 0,
-            transmits_alpha_to_children: bits & 0x02 != 0,
-            reserved: bits & !0x03,
-        }
-    }
-
-    fn bits(self) -> u8 {
-        self.reserved & !0x03
-            | u8::from(self.is_visible)
-            | (u8::from(self.transmits_alpha_to_children) << 1)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[bitsize(2)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, FromBits, PartialEq, Serialize)]
 pub enum HorizontalOrigin {
     #[default]
     Center,
     Left,
     Right,
-    Reserved(u8),
+    Reserved,
 }
 
-impl HorizontalOrigin {
-    fn from_bits(bits: u8) -> Self {
-        match bits & 0x03 {
-            0 => Self::Center,
-            1 => Self::Left,
-            2 => Self::Right,
-            value => Self::Reserved(value),
-        }
-    }
-
-    fn bits(self) -> u8 {
-        match self {
-            Self::Center => 0,
-            Self::Left => 1,
-            Self::Right => 2,
-            Self::Reserved(value) => value & 0x03,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[bitsize(2)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, FromBits, PartialEq, Serialize)]
 pub enum VerticalOrigin {
     #[default]
     Center,
     Top,
     Bottom,
-    Reserved(u8),
+    Reserved,
 }
 
-impl VerticalOrigin {
-    fn from_bits(bits: u8) -> Self {
-        match bits & 0x03 {
-            0 => Self::Center,
-            1 => Self::Top,
-            2 => Self::Bottom,
-            value => Self::Reserved(value),
-        }
-    }
-
-    fn bits(self) -> u8 {
-        match self {
-            Self::Center => 0,
-            Self::Top => 1,
-            Self::Bottom => 2,
-            Self::Reserved(value) => value & 0x03,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[bitsize(8, new = pub)]
+#[derive(
+    Clone, Copy, DebugBits, DefaultBits, DeserializeBits, Eq, FromBits, PartialEq, SerializeBits,
+)]
 pub struct PaneOrigin {
     pub x: HorizontalOrigin,
     pub y: VerticalOrigin,
     pub parent_x: HorizontalOrigin,
     pub parent_y: VerticalOrigin,
-}
-
-impl PaneOrigin {
-    fn from_bits(bits: u8) -> Self {
-        Self {
-            x: HorizontalOrigin::from_bits(bits),
-            y: VerticalOrigin::from_bits(bits >> 2),
-            parent_x: HorizontalOrigin::from_bits(bits >> 4),
-            parent_y: VerticalOrigin::from_bits(bits >> 6),
-        }
-    }
-
-    fn bits(self) -> u8 {
-        self.x.bits()
-            | (self.y.bits() << 2)
-            | (self.parent_x.bits() << 4)
-            | (self.parent_y.bits() << 6)
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -205,12 +140,12 @@ pub struct Vec3 {
 #[binrw]
 pub struct PaneInfo {
     /// Bit 0: visible. Bit 1: transmit alpha to children.
-    #[br(map = PaneFlags::from_bits)]
-    #[bw(map = |flags: &PaneFlags| flags.bits())]
+    #[br(map = |bits: u8| PaneFlags::from(u8::new(bits)))]
+    #[bw(map = |flags: &PaneFlags| u8::from(*flags).value())]
     pub flags: PaneFlags,
     /// Origin and parent-origin bitfield.
-    #[br(map = PaneOrigin::from_bits)]
-    #[bw(map = |origin: &PaneOrigin| origin.bits())]
+    #[br(map = |bits: u8| PaneOrigin::from(u8::new(bits)))]
+    #[bw(map = |origin: &PaneOrigin| u8::from(*origin).value())]
     pub origin: PaneOrigin,
     /// Opacity value.
     pub alpha: u8,

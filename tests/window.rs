@@ -1,7 +1,9 @@
 use std::io::Cursor;
 
 use binrw::{BinReaderExt, BinWriterExt};
-use smush_ui::bflyt::sections::{PaneFlags, PaneInfo, PaneOrigin, Vec2, Vec3, Window, WindowFrame};
+use smush_ui::bflyt::sections::{
+    PaneFlags, PaneInfo, PaneOrigin, TextureFlip, Vec2, Vec3, Window, WindowFrame,
+};
 
 #[test]
 fn window_writes_fixed_fields_and_trailing_data() {
@@ -29,7 +31,7 @@ fn window_writes_fixed_fields_and_trailing_data() {
     window.flags = 3;
     window.data.frames = vec![WindowFrame {
         material_index: 2,
-        texture_flip: 3,
+        texture_flip: TextureFlip::Rotate90,
     }];
     let mut output = Cursor::new(Vec::new());
     output.write_be(&window).unwrap();

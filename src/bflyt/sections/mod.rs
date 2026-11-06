@@ -37,4 +37,4 @@ pub use picture::Picture;
 pub use textbox::Textbox;
 pub use texture_list::TextureList;
 pub use user::{User, UserData, UserDataEntry, UserDataValue, UserSystemData};
-pub use window::{Window, WindowContent, WindowData, WindowFrame};
+pub use window::{TextureFlip, Window, WindowContent, WindowData, WindowFrame};

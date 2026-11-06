@@ -1,4 +1,5 @@
 use binrw::{BinRead, BinResult, Endian, binrw};
+use bilge::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Seek, Write};
 
@@ -49,7 +50,24 @@ pub struct WindowContent {
 #[derive(Serialize, Deserialize)]
 pub struct WindowFrame {
     pub material_index: u16,
-    pub texture_flip: u8,
+    #[serde(rename = "texture_flip")]
+    pub texture_flip: TextureFlip,
+}
+
+/// Texture-coordinate transform mode.
+#[bitsize(8)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, FromBits, PartialEq, Serialize)]
+pub enum TextureFlip {
+    #[default]
+    None,
+    Horizontal,
+    Vertical,
+    Rotate90,
+    Rotate180,
+    Rotate270,
+    /// An unrecognized transform mode, retained when reading and writing.
+    #[fallback]
+    Reserved(u8),
 }
 
 impl WindowData {
@@ -114,7 +132,7 @@ fn read_window_frame(bytes: &[u8], endian: Endian) -> BinResult<WindowFrame> {
     let mut reader = Cursor::new(bytes);
     Ok(WindowFrame {
         material_index: u16::read_options(&mut reader, endian, ())?,
-        texture_flip: u8::read_options(&mut reader, endian, ())?,
+        texture_flip: TextureFlip::from(u8::new(u8::read_options(&mut reader, endian, ())?)),
     })
 }
 
@@ -162,7 +180,7 @@ impl WindowContent {
 impl WindowFrame {
     fn write_to(&self, bytes: &mut Vec<u8>, endian: Endian) {
         write_u16(bytes, self.material_index, endian);
-        bytes.extend([self.texture_flip, 0]);
+        bytes.extend([u8::from(self.texture_flip).value(), 0]);
     }
 }
 
