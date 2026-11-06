@@ -99,6 +99,21 @@ section_accessors! {
     Window => as_window: Window,
 }
 
+impl Section {
+    /// Returns whether this section carries the common pane payload and may own pane children.
+    pub fn is_pane_section(&self) -> bool {
+        matches!(
+            self,
+            Self::Pane(_)
+                | Self::Bounding(_)
+                | Self::Picture(_)
+                | Self::Parts(_)
+                | Self::Textbox(_)
+                | Self::Window(_)
+        )
+    }
+}
+
 #[derive(Serialize)]
 struct PaneSectionRef<'a, T: Serialize> {
     #[serde(flatten)]
@@ -224,17 +239,7 @@ fn json_sections<'a, E: serde::ser::Error>(
                 Section::PaneStart(_) | Section::PaneEnd(_) => unreachable!(),
             };
 
-            if has_children
-                && !matches!(
-                    sections[index],
-                    Section::Pane(_)
-                        | Section::Bounding(_)
-                        | Section::Picture(_)
-                        | Section::Parts(_)
-                        | Section::Textbox(_)
-                        | Section::Window(_)
-                )
-            {
+            if has_children && !sections[index].is_pane_section() {
                 return Err(E::custom("pane start marker follows a non-pane section"));
             }
 

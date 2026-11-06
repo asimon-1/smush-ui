@@ -32,7 +32,10 @@ pub use material::Material;
 pub use pane::Pane;
 pub use pane_end::PaneEnd;
 pub use pane_start::PaneStart;
-pub use parts::{Parts, PartsData, PartsProperty};
+pub use parts::{
+    PaneUsageFlags, Parts, PartsData, PartsMaterialUsageFlags, PartsPaneBasicInfo, PartsProperty,
+    TextboxUsageFlags,
+};
 pub use picture::Picture;
 pub use textbox::Textbox;
 pub use texture_list::TextureList;

@@ -167,3 +167,23 @@ fn pane_boundaries_are_a_json_children_hierarchy() {
     };
     assert_eq!(marker_counts(&restored), marker_counts(&bflyt));
 }
+
+#[test]
+fn parts_overrides_are_typed_in_json() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/info_training.bflyt");
+    let bytes = fs::read(path).expect("parts override fixture should be readable");
+    let bflyt: Bflyt = Cursor::new(bytes)
+        .read_le()
+        .expect("parts override fixture should parse");
+
+    let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
+    assert!(!json.contains("referenced_data"));
+    assert!(!json.contains("property_offset"));
+    assert!(!json.contains("ext_user_data_offset"));
+    assert!(!json.contains("pane_basic_info_offset"));
+    assert_eq!(json.matches("\"pane_override\"").count(), 44);
+    assert_eq!(json.matches("\"pane_basic_info\"").count(), 12);
+
+    let restored: Bflyt = serde_json::from_str(&json).expect("typed parts JSON should deserialize");
+    assert_eq!(restored.sections.len(), bflyt.sections.len());
+}

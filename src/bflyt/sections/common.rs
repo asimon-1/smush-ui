@@ -1,5 +1,5 @@
-use binrw::{BinRead, BinResult, Endian, Error as BinError, NullString, binrw};
 use bilge::prelude::*;
+use binrw::{BinRead, BinResult, Endian, Error as BinError, NullString, binrw};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Error, ErrorKind};
 
