@@ -139,3 +139,31 @@ fn every_real_bflyt_fixture_round_trips_through_json() {
         );
     }
 }
+
+#[test]
+fn pane_boundaries_are_a_json_children_hierarchy() {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/com_btn_arrow_00.bflyt");
+    let bytes = fs::read(path).expect("pane hierarchy fixture should be readable");
+    let bflyt: Bflyt = Cursor::new(bytes)
+        .read_le()
+        .expect("pane hierarchy fixture should parse");
+
+    let json = serde_json::to_string_pretty(&bflyt).expect("layout should serialize to JSON");
+    assert!(!json.contains("PaneStart"));
+    assert!(!json.contains("PaneEnd"));
+    assert!(json.contains("\"children\""));
+
+    let restored: Bflyt = serde_json::from_str(&json).expect("nested pane JSON should deserialize");
+    assert_eq!(restored.sections.len(), bflyt.sections.len());
+    assert_eq!(restored.num_sections as usize, restored.sections.len());
+    let marker_counts = |layout: &Bflyt| {
+        layout.sections.iter().fold((0, 0), |counts, section| {
+            (
+                counts.0 + usize::from(section.as_pane_start().is_some()),
+                counts.1 + usize::from(section.as_pane_end().is_some()),
+            )
+        })
+    };
+    assert_eq!(marker_counts(&restored), marker_counts(&bflyt));
+}
