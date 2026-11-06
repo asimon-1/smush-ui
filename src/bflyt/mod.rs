@@ -123,6 +123,14 @@ struct PaneSectionRef<'a, T: Serialize> {
 }
 
 #[derive(Serialize)]
+struct GroupSectionRef<'a> {
+    #[serde(flatten)]
+    section: &'a Group,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    children: Option<Vec<JsonSectionRef<'a>>>,
+}
+
+#[derive(Serialize)]
 enum JsonSectionRef<'a> {
     Layout(&'a Layout),
     Control(&'a Control),
@@ -130,9 +138,7 @@ enum JsonSectionRef<'a> {
     TextureList(&'a TextureList),
     FontList(&'a FontList),
     Material(&'a Material),
-    Group(&'a Group),
-    GroupStart(&'a GroupStart),
-    GroupEnd(&'a GroupEnd),
+    Group(GroupSectionRef<'a>),
     Pane(PaneSectionRef<'a, Pane>),
     Bounding(PaneSectionRef<'a, Bounding>),
     Picture(PaneSectionRef<'a, Picture>),
@@ -150,6 +156,14 @@ struct PaneSection<T> {
 }
 
 #[derive(Deserialize)]
+struct GroupSection {
+    #[serde(flatten)]
+    section: Group,
+    #[serde(default)]
+    children: Option<Vec<JsonSection>>,
+}
+
+#[derive(Deserialize)]
 enum JsonSection {
     Layout(Layout),
     Control(Control),
@@ -157,9 +171,7 @@ enum JsonSection {
     TextureList(TextureList),
     FontList(FontList),
     Material(Material),
-    Group(Group),
-    GroupStart(GroupStart),
-    GroupEnd(GroupEnd),
+    Group(GroupSection),
     Pane(PaneSection<Pane>),
     Bounding(PaneSection<Bounding>),
     Picture(PaneSection<Picture>),
@@ -171,32 +183,47 @@ enum JsonSection {
 fn json_sections<'a, E: serde::ser::Error>(
     sections: &'a [Section],
 ) -> Result<Vec<JsonSectionRef<'a>>, E> {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Boundary {
+        Pane,
+        Group,
+    }
+
     fn read_level<'a, E: serde::ser::Error>(
         sections: &'a [Section],
         mut index: usize,
-        nested: bool,
+        expected_boundary: Option<Boundary>,
     ) -> Result<(Vec<JsonSectionRef<'a>>, usize), E> {
         let mut result = Vec::new();
 
         while index < sections.len() {
-            if matches!(sections[index], Section::PaneEnd(_)) {
-                return if nested {
+            let boundary = match &sections[index] {
+                Section::PaneEnd(_) => Some(Boundary::Pane),
+                Section::GroupEnd(_) => Some(Boundary::Group),
+                Section::PaneStart(_) | Section::GroupStart(_) => {
+                    return Err(E::custom(
+                        "hierarchy start marker does not follow its parent section",
+                    ));
+                }
+                _ => None,
+            };
+            if let Some(boundary) = boundary {
+                return if expected_boundary == Some(boundary) {
                     Ok((result, index + 1))
                 } else {
-                    Err(E::custom("pane end marker has no matching pane start"))
+                    Err(E::custom(
+                        "hierarchy end marker has no matching start marker",
+                    ))
                 };
             }
-            if matches!(sections[index], Section::PaneStart(_)) {
-                return Err(E::custom(
-                    "pane start marker does not follow a pane section",
-                ));
-            }
 
-            let has_children = sections
-                .get(index + 1)
-                .is_some_and(|section| matches!(section, Section::PaneStart(_)));
-            let (children, next_index) = if has_children {
-                let (children, next_index) = read_level::<E>(sections, index + 2, true)?;
+            let boundary = match sections.get(index + 1) {
+                Some(Section::PaneStart(_)) => Some(Boundary::Pane),
+                Some(Section::GroupStart(_)) => Some(Boundary::Group),
+                _ => None,
+            };
+            let (children, next_index) = if let Some(boundary) = boundary {
+                let (children, next_index) = read_level::<E>(sections, index + 2, Some(boundary))?;
                 (Some(children), next_index)
             } else {
                 (None, index + 1)
@@ -209,9 +236,10 @@ fn json_sections<'a, E: serde::ser::Error>(
                 Section::TextureList(value) => JsonSectionRef::TextureList(value),
                 Section::FontList(value) => JsonSectionRef::FontList(value),
                 Section::Material(value) => JsonSectionRef::Material(value),
-                Section::Group(value) => JsonSectionRef::Group(value),
-                Section::GroupStart(value) => JsonSectionRef::GroupStart(value),
-                Section::GroupEnd(value) => JsonSectionRef::GroupEnd(value),
+                Section::Group(value) => JsonSectionRef::Group(GroupSectionRef {
+                    section: value,
+                    children,
+                }),
                 Section::Pane(value) => JsonSectionRef::Pane(PaneSectionRef {
                     section: value,
                     children,
@@ -236,54 +264,101 @@ fn json_sections<'a, E: serde::ser::Error>(
                     section: value,
                     children,
                 }),
-                Section::PaneStart(_) | Section::PaneEnd(_) => unreachable!(),
+                Section::PaneStart(_)
+                | Section::PaneEnd(_)
+                | Section::GroupStart(_)
+                | Section::GroupEnd(_) => unreachable!(),
             };
 
-            if has_children && !sections[index].is_pane_section() {
-                return Err(E::custom("pane start marker follows a non-pane section"));
+            match boundary {
+                Some(Boundary::Pane) if !sections[index].is_pane_section() => {
+                    return Err(E::custom("pane start marker follows a non-pane section"));
+                }
+                Some(Boundary::Group) if !matches!(sections[index], Section::Group(_)) => {
+                    return Err(E::custom("group start marker follows a non-group section"));
+                }
+                _ => {}
             }
 
             result.push(section);
             index = next_index;
         }
 
-        if nested {
-            Err(E::custom("pane start marker has no matching pane end"))
+        if expected_boundary.is_some() {
+            Err(E::custom(
+                "hierarchy start marker has no matching end marker",
+            ))
         } else {
             Ok((result, index))
         }
     }
 
-    read_level::<E>(sections, 0, false).map(|(sections, _)| sections)
+    read_level::<E>(sections, 0, None).map(|(sections, _)| sections)
 }
 
 fn binary_sections(sections: Vec<JsonSection>) -> Vec<Section> {
+    #[derive(Clone, Copy)]
+    enum Boundary {
+        Pane,
+        Group,
+    }
+
     fn append(output: &mut Vec<Section>, section: JsonSection) {
-        let (section, children) = match section {
-            JsonSection::Layout(value) => (Section::Layout(value), None),
-            JsonSection::Control(value) => (Section::Control(value), None),
-            JsonSection::User(value) => (Section::User(value), None),
-            JsonSection::TextureList(value) => (Section::TextureList(value), None),
-            JsonSection::FontList(value) => (Section::FontList(value), None),
-            JsonSection::Material(value) => (Section::Material(value), None),
-            JsonSection::Group(value) => (Section::Group(value), None),
-            JsonSection::GroupStart(value) => (Section::GroupStart(value), None),
-            JsonSection::GroupEnd(value) => (Section::GroupEnd(value), None),
-            JsonSection::Pane(value) => (Section::Pane(value.section), value.children),
-            JsonSection::Bounding(value) => (Section::Bounding(value.section), value.children),
-            JsonSection::Picture(value) => (Section::Picture(value.section), value.children),
-            JsonSection::Parts(value) => (Section::Parts(value.section), value.children),
-            JsonSection::Textbox(value) => (Section::Textbox(value.section), value.children),
-            JsonSection::Window(value) => (Section::Window(value.section), value.children),
+        let (section, children, boundary) = match section {
+            JsonSection::Layout(value) => (Section::Layout(value), None, Boundary::Pane),
+            JsonSection::Control(value) => (Section::Control(value), None, Boundary::Pane),
+            JsonSection::User(value) => (Section::User(value), None, Boundary::Pane),
+            JsonSection::TextureList(value) => (Section::TextureList(value), None, Boundary::Pane),
+            JsonSection::FontList(value) => (Section::FontList(value), None, Boundary::Pane),
+            JsonSection::Material(value) => (Section::Material(value), None, Boundary::Pane),
+            JsonSection::Group(value) => (
+                Section::Group(value.section),
+                value.children,
+                Boundary::Group,
+            ),
+            JsonSection::Pane(value) => {
+                (Section::Pane(value.section), value.children, Boundary::Pane)
+            }
+            JsonSection::Bounding(value) => (
+                Section::Bounding(value.section),
+                value.children,
+                Boundary::Pane,
+            ),
+            JsonSection::Picture(value) => (
+                Section::Picture(value.section),
+                value.children,
+                Boundary::Pane,
+            ),
+            JsonSection::Parts(value) => (
+                Section::Parts(value.section),
+                value.children,
+                Boundary::Pane,
+            ),
+            JsonSection::Textbox(value) => (
+                Section::Textbox(value.section),
+                value.children,
+                Boundary::Pane,
+            ),
+            JsonSection::Window(value) => (
+                Section::Window(value.section),
+                value.children,
+                Boundary::Pane,
+            ),
         };
 
         output.push(section);
         if let Some(children) = children {
-            output.push(Section::PaneStart(PaneStart::new()));
+            output.push(match boundary {
+                Boundary::Pane => Section::PaneStart(PaneStart::new()),
+                Boundary::Group => Section::GroupStart(GroupStart::new()),
+            });
             for child in children {
                 append(output, child);
             }
-            output.push(Section::PaneEnd(PaneEnd::new()));
+            output.push(match boundary {
+                Boundary::Pane => Section::PaneEnd(PaneEnd::new()),
+                Boundary::Group => Section::GroupEnd(GroupEnd::new()),
+            });
         }
     }
 

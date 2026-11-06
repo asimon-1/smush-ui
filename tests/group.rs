@@ -16,5 +16,11 @@ fn round_trips_fixed_width_group_names() {
 
     let parsed: Group = Cursor::new(bytes).read_be().expect("group should parse");
     assert_eq!(parsed.name, "root");
-    assert_eq!(parsed.children[0], "child");
+    assert_eq!(parsed.members[0], "child");
+
+    let json = serde_json::to_string(&parsed).expect("group should serialize to JSON");
+    assert!(json.contains("\"members\":[\"child\"]"));
+    let without_members: Group =
+        serde_json::from_str(r#"{"name":"root"}"#).expect("members should default to empty");
+    assert!(without_members.members.is_empty());
 }
