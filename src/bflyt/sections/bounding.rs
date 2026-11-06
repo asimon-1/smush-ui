@@ -13,4 +13,8 @@ pub struct Bounding {
     pub pane: PaneInfo,
 }
 
-impl Bounding { pub fn new(pane: PaneInfo) -> Self { Self { size: 0, pane } } }
+impl Bounding {
+    pub fn new(pane: PaneInfo) -> Self {
+        Self { size: 0, pane }
+    }
+}

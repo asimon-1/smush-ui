@@ -1,7 +1,7 @@
 use std::{fs, io::Cursor, path::Path};
 
-use smush_ui::bflyt::Bflyt;
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::Bflyt;
 
 #[rustfmt::skip]
 const BFLYT: &[u8] = &[
@@ -70,7 +70,9 @@ fn serializes_to_json_and_back() {
     let restored: Bflyt = serde_json::from_str(&json).expect("JSON should deserialize to a layout");
     let mut output = Cursor::new(Vec::new());
 
-    output.write_le(&restored).expect("JSON layout should write");
+    output
+        .write_le(&restored)
+        .expect("JSON layout should write");
     assert_eq!(output.into_inner(), BFLYT);
 }
 
@@ -79,8 +81,15 @@ fn every_real_bflyt_fixture_round_trips_through_json() {
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets");
     let fixtures: Vec<_> = fs::read_dir(&fixture_dir)
         .expect("test_assets directory should exist")
-        .map(|entry| entry.expect("fixture directory entries should be readable").path())
-        .filter(|path| path.extension().is_some_and(|extension| extension == "bflyt"))
+        .map(|entry| {
+            entry
+                .expect("fixture directory entries should be readable")
+                .path()
+        })
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "bflyt")
+        })
         .collect();
 
     assert!(
@@ -89,13 +98,12 @@ fn every_real_bflyt_fixture_round_trips_through_json() {
     );
 
     for path in fixtures {
-        let bytes = fs::read(&path).unwrap_or_else(|error| {
-            panic!("{} should be readable: {error}", path.display())
-        });
+        let bytes = fs::read(&path)
+            .unwrap_or_else(|error| panic!("{} should be readable: {error}", path.display()));
         let mut input = Cursor::new(bytes.as_slice());
-        let bflyt: Bflyt = input.read_le().unwrap_or_else(|error| {
-            panic!("{} should parse: {error}", path.display())
-        });
+        let bflyt: Bflyt = input
+            .read_le()
+            .unwrap_or_else(|error| panic!("{} should parse: {error}", path.display()));
 
         assert_eq!(
             input.position(),
@@ -110,21 +118,19 @@ fn every_real_bflyt_fixture_round_trips_through_json() {
             path.display()
         );
 
-        let json = serde_json::to_vec(&bflyt).unwrap_or_else(|error| {
-            panic!("{} should serialize to JSON: {error}", path.display())
-        });
-        let restored: Bflyt = serde_json::from_slice(&json).unwrap_or_else(|error| {
-            panic!("{} JSON should deserialize: {error}", path.display())
-        });
+        let json = serde_json::to_vec(&bflyt)
+            .unwrap_or_else(|error| panic!("{} should serialize to JSON: {error}", path.display()));
+        let restored: Bflyt = serde_json::from_slice(&json)
+            .unwrap_or_else(|error| panic!("{} JSON should deserialize: {error}", path.display()));
         let mut output = Cursor::new(Vec::new());
 
         output.write_le(&restored).unwrap_or_else(|error| {
             panic!("{} JSON should write as BFLYT: {error}", path.display())
         });
         let written = output.into_inner();
-        let reparsed: Bflyt = Cursor::new(written.as_slice()).read_le().unwrap_or_else(|error| {
-            panic!("{} JSON output should parse: {error}", path.display())
-        });
+        let reparsed: Bflyt = Cursor::new(written.as_slice())
+            .read_le()
+            .unwrap_or_else(|error| panic!("{} JSON output should parse: {error}", path.display()));
         assert_eq!(
             serde_json::to_value(&reparsed).expect("reparsed layout should serialize"),
             serde_json::to_value(&restored).expect("restored layout should serialize"),

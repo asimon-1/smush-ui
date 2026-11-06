@@ -14,4 +14,12 @@ pub struct Picture {
     pub material: MaterialInfo,
 }
 
-impl Picture { pub fn new(pane: PaneInfo, material: MaterialInfo) -> Self { Self { size: 0, pane, material } } }
+impl Picture {
+    pub fn new(pane: PaneInfo, material: MaterialInfo) -> Self {
+        Self {
+            size: 0,
+            pane,
+            material,
+        }
+    }
+}

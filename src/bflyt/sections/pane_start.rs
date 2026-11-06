@@ -12,4 +12,8 @@ pub struct PaneStart {
     pub size: u32,
 }
 
-impl PaneStart { pub fn new() -> Self { Self { size: 0 } } }
+impl PaneStart {
+    pub fn new() -> Self {
+        Self { size: 0 }
+    }
+}

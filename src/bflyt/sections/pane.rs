@@ -13,4 +13,8 @@ pub struct Pane {
     pub pane: PaneInfo,
 }
 
-impl Pane { pub fn new(pane: PaneInfo) -> Self { Self { size: 0, pane } } }
+impl Pane {
+    pub fn new(pane: PaneInfo) -> Self {
+        Self { size: 0, pane }
+    }
+}

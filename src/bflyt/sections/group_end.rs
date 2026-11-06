@@ -12,4 +12,8 @@ pub struct GroupEnd {
     pub size: u32,
 }
 
-impl GroupEnd { pub fn new() -> Self { Self { size: 0 } } }
+impl GroupEnd {
+    pub fn new() -> Self {
+        Self { size: 0 }
+    }
+}

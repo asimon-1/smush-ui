@@ -13,4 +13,8 @@ pub struct User {
     pub data: Vec<u8>,
 }
 
-impl User { pub fn new(data: Vec<u8>) -> Self { Self { size: 0, data } } }
+impl User {
+    pub fn new(data: Vec<u8>) -> Self {
+        Self { size: 0, data }
+    }
+}

@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
-use smush_ui::bflyt::sections::{Control, Material, User};
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::sections::{Control, Material, User};
 
 #[test]
 fn round_trips_control_user_and_material_payloads() {

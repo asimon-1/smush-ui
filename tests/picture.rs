@@ -1,9 +1,9 @@
 use std::io::Cursor;
 
+use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::{
     Color, MaterialInfo, PaneFlags, PaneInfo, PaneOrigin, Picture, Vec2, Vec3,
 };
-use binrw::{BinReaderExt, BinWriterExt};
 
 fn pane() -> PaneInfo {
     PaneInfo {
@@ -11,7 +11,7 @@ fn pane() -> PaneInfo {
         origin: PaneOrigin::default(),
         alpha: 0xff,
         part_scaling: 0,
-        name: [0; 24],
+        name: String::new(),
         user_data: [0; 8],
         position: Vec3 {
             x: 0.0,
@@ -38,14 +38,22 @@ fn color() -> Color {
 
 #[test]
 fn picture_writes_material_info_after_pane_info() {
-    let picture = Picture::new(pane(), MaterialInfo::new(
-            color(), color(), color(), color(), 3, vec![[
+    let picture = Picture::new(
+        pane(),
+        MaterialInfo::new(
+            color(),
+            color(),
+            color(),
+            color(),
+            3,
+            vec![[
                 Vec2 { x: 0.0, y: 0.0 },
                 Vec2 { x: 1.0, y: 0.0 },
                 Vec2 { x: 0.0, y: 1.0 },
                 Vec2 { x: 1.0, y: 1.0 },
             ]],
-        ));
+        ),
+    );
     let mut output = Cursor::new(Vec::new());
     output.write_be(&picture).unwrap();
     let bytes = output.into_inner();

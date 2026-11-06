@@ -1,4 +1,8 @@
-use std::{fs::File, io::{BufReader, BufWriter}, path::PathBuf};
+use std::{
+    fs::File,
+    io::{BufReader, BufWriter},
+    path::PathBuf,
+};
 
 use binrw::{BinReaderExt, BinWriterExt};
 use clap::{Parser, Subcommand};
@@ -14,15 +18,9 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Deserialize a little-endian BFLYT file to pretty-printed JSON.
-    ToJson {
-        input: PathBuf,
-        output: PathBuf,
-    },
+    ToJson { input: PathBuf, output: PathBuf },
     /// Serialize JSON to a little-endian BFLYT file.
-    FromJson {
-        input: PathBuf,
-        output: PathBuf,
-    },
+    FromJson { input: PathBuf, output: PathBuf },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
-use smush_ui::bflyt::sections::TextureList;
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::sections::TextureList;
 
 #[rustfmt::skip]
 const TEXTURE_LIST: &[u8] = &[

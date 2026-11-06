@@ -12,4 +12,8 @@ pub struct PaneEnd {
     pub size: u32,
 }
 
-impl PaneEnd { pub fn new() -> Self { Self { size: 0 } } }
+impl PaneEnd {
+    pub fn new() -> Self {
+        Self { size: 0 }
+    }
+}

@@ -12,4 +12,8 @@ pub struct GroupStart {
     pub size: u32,
 }
 
-impl GroupStart { pub fn new() -> Self { Self { size: 0 } } }
+impl GroupStart {
+    pub fn new() -> Self {
+        Self { size: 0 }
+    }
+}

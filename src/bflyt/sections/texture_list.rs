@@ -33,4 +33,13 @@ pub struct TextureList {
     pub filenames: Vec<String>,
 }
 
-impl TextureList { pub fn new(filenames: Vec<String>) -> Self { Self { size: 0, filename_count: 0, offsets: Vec::new(), filenames } } }
+impl TextureList {
+    pub fn new(filenames: Vec<String>) -> Self {
+        Self {
+            size: 0,
+            filename_count: 0,
+            offsets: Vec::new(),
+            filenames,
+        }
+    }
+}

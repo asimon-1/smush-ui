@@ -30,4 +30,13 @@ pub struct FontList {
     pub filenames: Vec<String>,
 }
 
-impl FontList { pub fn new(filenames: Vec<String>) -> Self { Self { size: 0, filename_count: 0, offsets: Vec::new(), filenames } } }
+impl FontList {
+    pub fn new(filenames: Vec<String>) -> Self {
+        Self {
+            size: 0,
+            filename_count: 0,
+            offsets: Vec::new(),
+            filenames,
+        }
+    }
+}

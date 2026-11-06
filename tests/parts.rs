@@ -1,16 +1,19 @@
 use std::io::Cursor;
 
-use smush_ui::bflyt::sections::{PaneFlags, PaneInfo, PaneOrigin, Parts, PartsProperty, Vec2, Vec3};
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::sections::{
+    PaneFlags, PaneInfo, PaneOrigin, Parts, PartsProperty, Vec2, Vec3,
+};
 
 #[test]
 fn parts_round_trips_properties_and_trailing_data() {
-    let parts = Parts::new(PaneInfo {
+    let parts = Parts::new(
+        PaneInfo {
             flags: PaneFlags::default(),
             origin: PaneOrigin::default(),
             alpha: 0xff,
             part_scaling: 0,
-            name: [0; 24],
+            name: String::new(),
             user_data: [0; 8],
             position: Vec3 {
                 x: 0.0,
@@ -24,8 +27,10 @@ fn parts_round_trips_properties_and_trailing_data() {
             },
             scale: Vec2 { x: 1.0, y: 1.0 },
             size: Vec2 { x: 1.0, y: 1.0 },
-        }, Vec2 { x: 1.0, y: 1.0 }, vec![PartsProperty {
-            name: [0; 24],
+        },
+        Vec2 { x: 1.0, y: 1.0 },
+        vec![PartsProperty {
+            name: String::new(),
             usage_flags: 1,
             basic_usage_flags: 2,
             material_usage_flags: 3,
@@ -33,7 +38,9 @@ fn parts_round_trips_properties_and_trailing_data() {
             property_offset: 0,
             ext_user_data_offset: 0,
             pane_basic_info_offset: 0,
-        }], vec![0xaa, 0xbb]);
+        }],
+        vec![0xaa, 0xbb],
+    );
     let mut output = Cursor::new(Vec::new());
     output.write_be(&parts).unwrap();
     let bytes = output.into_inner();

@@ -1,30 +1,30 @@
 use std::io::Cursor;
 
-use smush_ui::bflyt::sections::{PaneFlags, PaneInfo, PaneOrigin, Vec2, Vec3, Window};
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::sections::{PaneFlags, PaneInfo, PaneOrigin, Vec2, Vec3, Window};
 
 #[test]
 fn window_writes_fixed_fields_and_trailing_data() {
     let mut window = Window::new(PaneInfo {
-            flags: PaneFlags::default(),
-            origin: PaneOrigin::default(),
-            alpha: 0xff,
-            part_scaling: 0,
-            name: [0; 24],
-            user_data: [0; 8],
-            position: Vec3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            rotation: Vec3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            scale: Vec2 { x: 1.0, y: 1.0 },
-            size: Vec2 { x: 1.0, y: 1.0 },
-        });
+        flags: PaneFlags::default(),
+        origin: PaneOrigin::default(),
+        alpha: 0xff,
+        part_scaling: 0,
+        name: String::new(),
+        user_data: [0; 8],
+        position: Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        rotation: Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        scale: Vec2 { x: 1.0, y: 1.0 },
+        size: Vec2 { x: 1.0, y: 1.0 },
+    });
     window.rectangle = [0.0, 1.0, 2.0, 3.0];
     window.frame_data_count = 2;
     window.flags = 3;

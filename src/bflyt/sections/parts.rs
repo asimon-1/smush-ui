@@ -1,12 +1,15 @@
 use binrw::binrw;
 use serde::{Deserialize, Serialize};
 
+use super::common::{fixed_name_to_string, string_to_fixed_name};
 use super::{PaneInfo, Vec2};
 
 #[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct PartsProperty {
-    pub name: [u8; 24],
+    #[br(try_map = fixed_name_to_string)]
+    #[bw(try_map = string_to_fixed_name)]
+    pub name: String,
     pub usage_flags: u8,
     pub basic_usage_flags: u8,
     pub material_usage_flags: u8,
@@ -35,4 +38,20 @@ pub struct Parts {
     pub data: Vec<u8>,
 }
 
-impl Parts { pub fn new(pane: PaneInfo, magnify: Vec2, properties: Vec<PartsProperty>, data: Vec<u8>) -> Self { Self { size: 0, pane, property_count: 0, magnify, properties, data } } }
+impl Parts {
+    pub fn new(
+        pane: PaneInfo,
+        magnify: Vec2,
+        properties: Vec<PartsProperty>,
+        data: Vec<u8>,
+    ) -> Self {
+        Self {
+            size: 0,
+            pane,
+            property_count: 0,
+            magnify,
+            properties,
+            data,
+        }
+    }
+}

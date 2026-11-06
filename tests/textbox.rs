@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
-use smush_ui::bflyt::sections::{Color, PaneFlags, PaneInfo, PaneOrigin, Textbox, Vec2, Vec3};
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::sections::{Color, PaneFlags, PaneInfo, PaneOrigin, Textbox, Vec2, Vec3};
 
 fn color() -> Color {
     Color {
@@ -17,7 +17,7 @@ fn pane() -> PaneInfo {
         origin: PaneOrigin::default(),
         alpha: 0xff,
         part_scaling: 0,
-        name: [0; 24],
+        name: String::new(),
         user_data: [0; 8],
         position: Vec3 {
             x: 0.0,

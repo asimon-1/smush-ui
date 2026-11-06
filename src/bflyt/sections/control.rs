@@ -13,4 +13,8 @@ pub struct Control {
     pub data: Vec<u8>,
 }
 
-impl Control { pub fn new(data: Vec<u8>) -> Self { Self { size: 0, data } } }
+impl Control {
+    pub fn new(data: Vec<u8>) -> Self {
+        Self { size: 0, data }
+    }
+}

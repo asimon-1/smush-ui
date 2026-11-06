@@ -1,4 +1,7 @@
-use binrw::{BinRead, BinResult, Endian, binrw, io::{Read, Seek, SeekFrom}};
+use binrw::{
+    BinRead, BinResult, Endian, binrw,
+    io::{Read, Seek, SeekFrom},
+};
 use serde::{Deserialize, Serialize};
 
 pub mod sections;

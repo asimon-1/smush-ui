@@ -1,5 +1,26 @@
 use binrw::binrw;
 use serde::{Deserialize, Serialize};
+use std::io::{Error, ErrorKind};
+
+pub(crate) fn fixed_name_to_string(bytes: [u8; 24]) -> Result<String, std::str::Utf8Error> {
+    let length = bytes
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(bytes.len());
+    std::str::from_utf8(&bytes[..length]).map(str::to_owned)
+}
+
+pub(crate) fn string_to_fixed_name(name: &String) -> Result<[u8; 24], Error> {
+    if name.len() > 24 {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "fixed BFLYT names cannot exceed 24 bytes",
+        ));
+    }
+    let mut bytes = [0; 24];
+    bytes[..name.len()].copy_from_slice(name.as_bytes());
+    Ok(bytes)
+}
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PaneFlags {
@@ -150,7 +171,9 @@ pub struct PaneInfo {
     /// Part scaling mode.
     pub part_scaling: u8,
     /// NUL-terminated pane name in a fixed 24-byte buffer.
-    pub name: [u8; 24],
+    #[br(try_map = fixed_name_to_string)]
+    #[bw(try_map = string_to_fixed_name)]
+    pub name: String,
     pub user_data: [u8; 8],
     pub position: Vec3,
     pub rotation: Vec3,
@@ -173,4 +196,23 @@ pub struct MaterialInfo {
     pub texture_coordinates: Vec<[Vec2; 4]>,
 }
 
-impl MaterialInfo { pub fn new(top_left_color: Color, top_right_color: Color, bottom_left_color: Color, bottom_right_color: Color, material_index: u16, texture_coordinates: Vec<[Vec2; 4]>) -> Self { Self { top_left_color, top_right_color, bottom_left_color, bottom_right_color, material_index, texture_coordinate_count: 0, texture_coordinates } } }
+impl MaterialInfo {
+    pub fn new(
+        top_left_color: Color,
+        top_right_color: Color,
+        bottom_left_color: Color,
+        bottom_right_color: Color,
+        material_index: u16,
+        texture_coordinates: Vec<[Vec2; 4]>,
+    ) -> Self {
+        Self {
+            top_left_color,
+            top_right_color,
+            bottom_left_color,
+            bottom_right_color,
+            material_index,
+            texture_coordinate_count: 0,
+            texture_coordinates,
+        }
+    }
+}

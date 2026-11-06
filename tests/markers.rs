@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
-use smush_ui::bflyt::sections::{GroupEnd, GroupStart, PaneEnd, PaneStart};
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::sections::{GroupEnd, GroupStart, PaneEnd, PaneStart};
 
 #[test]
 fn marker_sections_are_an_eight_byte_header() {

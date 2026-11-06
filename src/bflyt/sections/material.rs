@@ -13,5 +13,7 @@ pub struct Material {
 }
 
 impl Material {
-    pub fn new(data: Vec<u8>) -> Self { Self { size: 0, data } }
+    pub fn new(data: Vec<u8>) -> Self {
+        Self { size: 0, data }
+    }
 }

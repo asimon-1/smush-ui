@@ -1,9 +1,9 @@
 use std::io::Cursor;
 
+use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::{
     Bounding, HorizontalOrigin, Pane, PaneFlags, PaneInfo, PaneOrigin, Vec2, Vec3, VerticalOrigin,
 };
-use binrw::{BinReaderExt, BinWriterExt};
 
 fn pane_info() -> PaneInfo {
     PaneInfo {
@@ -20,7 +20,7 @@ fn pane_info() -> PaneInfo {
         },
         alpha: 0xff,
         part_scaling: 0,
-        name: [0; 24],
+        name: String::new(),
         user_data: [0; 8],
         position: Vec3 {
             x: 0.0,
