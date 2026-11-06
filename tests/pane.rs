@@ -1,9 +1,9 @@
 use std::io::Cursor;
 
-use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::{
     Bounding, HorizontalOrigin, Pane, PaneFlags, PaneInfo, PaneOrigin, Vec2, Vec3, VerticalOrigin,
 };
+use binrw::{BinReaderExt, BinWriterExt};
 
 fn pane_info() -> PaneInfo {
     PaneInfo {
@@ -40,8 +40,8 @@ fn pane_info() -> PaneInfo {
 #[test]
 fn pane_and_bounding_have_the_documented_size() {
     let mut output = Cursor::new(Vec::new());
-    output.write_be(&Pane { pane: pane_info() }).unwrap();
-    output.write_be(&Bounding { pane: pane_info() }).unwrap();
+    output.write_be(&Pane::new(pane_info())).unwrap();
+    output.write_be(&Bounding::new(pane_info())).unwrap();
     let bytes = output.into_inner();
 
     assert_eq!(u32::from_be_bytes(bytes[4..8].try_into().unwrap()), 0x54);

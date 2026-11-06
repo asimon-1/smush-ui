@@ -1,17 +1,13 @@
 use std::io::Cursor;
 
-use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::{Control, Material, User};
+use binrw::{BinReaderExt, BinWriterExt};
 
 #[test]
 fn round_trips_control_user_and_material_payloads() {
-    let control = Control {
-        data: vec![1, 2, 3],
-    };
-    let user = User { data: vec![4, 5] };
-    let material = Material {
-        data: vec![6, 7, 8, 9],
-    };
+    let control = Control::new(vec![1, 2, 3]);
+    let user = User::new(vec![4, 5]);
+    let material = Material::new(vec![6, 7, 8, 9]);
 
     let mut output = Cursor::new(Vec::new());
     output.write_be(&control).expect("control should write");

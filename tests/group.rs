@@ -1,15 +1,15 @@
 use std::io::Cursor;
 
-use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::Group;
+use binrw::{BinReaderExt, BinWriterExt};
 
 #[test]
 fn round_trips_fixed_width_group_names() {
-    let group = Group {
-        name: *b"root\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-        padding: [0; 2],
-        children: vec![*b"child\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"],
-    };
+    let group = Group::new(
+        *b"root\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+        [0; 2],
+        vec![*b"child\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"],
+    );
     let mut output = Cursor::new(Vec::new());
     output.write_be(&group).expect("group should write");
     let bytes = output.into_inner();

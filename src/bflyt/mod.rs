@@ -1,7 +1,5 @@
-use binrw::{
-    BinRead, BinResult, Endian, binrw,
-    io::{Read, Seek, SeekFrom},
-};
+use binrw::{BinRead, BinResult, Endian, binrw, io::{Read, Seek, SeekFrom}};
+use serde::{Deserialize, Serialize};
 
 pub mod sections;
 use self::sections::{
@@ -9,6 +7,7 @@ use self::sections::{
     PaneStart, Parts, Picture, Textbox, TextureList, User, Window,
 };
 
+#[derive(Serialize, Deserialize)]
 #[binrw]
 #[br(little, magic = b"FLYT\xff\xfe\x14\x00")]
 #[bw(little, magic = b"FLYT\xff\xfe\x14\x00")]
@@ -41,6 +40,7 @@ fn read_sections<R: Read + Seek>(
     Ok(sections)
 }
 
+#[derive(Serialize, Deserialize)]
 #[binrw]
 pub enum Section {
     Layout(Layout),

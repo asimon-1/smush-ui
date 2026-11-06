@@ -1,15 +1,15 @@
 use std::io::Cursor;
 
-use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::{GroupEnd, GroupStart, PaneEnd, PaneStart};
+use binrw::{BinReaderExt, BinWriterExt};
 
 #[test]
 fn marker_sections_are_an_eight_byte_header() {
     let mut output = Cursor::new(Vec::new());
-    output.write_be(&PaneStart {}).unwrap();
-    output.write_be(&PaneEnd {}).unwrap();
-    output.write_be(&GroupStart {}).unwrap();
-    output.write_be(&GroupEnd {}).unwrap();
+    output.write_be(&PaneStart::new()).unwrap();
+    output.write_be(&PaneEnd::new()).unwrap();
+    output.write_be(&GroupStart::new()).unwrap();
+    output.write_be(&GroupEnd::new()).unwrap();
     let bytes = output.into_inner();
 
     assert_eq!(bytes.len(), 32);

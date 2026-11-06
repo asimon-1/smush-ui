@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
-use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::TextureList;
+use binrw::{BinReaderExt, BinWriterExt};
 
 #[rustfmt::skip]
 const TEXTURE_LIST: &[u8] = &[
@@ -26,9 +26,7 @@ fn reads_section_relative_filename_offsets() {
 
 #[test]
 fn writes_offsets_and_size_from_filenames() {
-    let texture_list = TextureList {
-        filenames: vec!["foo".to_owned(), "bar.png".to_owned()],
-    };
+    let texture_list = TextureList::new(vec!["foo".to_owned(), "bar.png".to_owned()]);
     let mut output = Cursor::new(Vec::new());
 
     output
@@ -40,9 +38,7 @@ fn writes_offsets_and_size_from_filenames() {
 
 #[test]
 fn round_trips_an_empty_list() {
-    let texture_list = TextureList {
-        filenames: Vec::new(),
-    };
+    let texture_list = TextureList::new(Vec::new());
     let mut output = Cursor::new(Vec::new());
     output
         .write_le(&texture_list)

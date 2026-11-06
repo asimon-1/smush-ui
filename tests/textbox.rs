@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
-use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::{Color, PaneFlags, PaneInfo, PaneOrigin, Textbox, Vec2, Vec3};
+use binrw::{BinReaderExt, BinWriterExt};
 
 fn color() -> Color {
     Color {
@@ -36,31 +36,27 @@ fn pane() -> PaneInfo {
 
 #[test]
 fn textbox_writes_fixed_fields_and_trailing_data() {
-    let textbox = Textbox {
-        pane: pane(),
-        text_buffer_length: 16,
-        text_restrict_length: 12,
-        material_index: 1,
-        font_index: 2,
-        origin: 3,
-        line_alignment: 4,
-        active_shadows: 5,
-        padding: 0,
-        italic_tilt: 0.25,
-        text_offset: 0xa0,
-        top_color: color(),
-        bottom_color: color(),
-        font_size: Vec2 { x: 12.0, y: 14.0 },
-        character_size: 2.0,
-        line_size: 3.0,
-        textbox_name_offset: 0,
-        shadow_offset: Vec2 { x: 1.0, y: 2.0 },
-        shadow_scale: Vec2 { x: 3.0, y: 4.0 },
-        shadow_top_color: color(),
-        shadow_bottom_color: color(),
-        shadow_italic_tilt: 0.5,
-        data: vec![0, 1, 2],
-    };
+    let mut textbox = Textbox::new(pane());
+    textbox.text_buffer_length = 16;
+    textbox.text_restrict_length = 12;
+    textbox.material_index = 1;
+    textbox.font_index = 2;
+    textbox.origin = 3;
+    textbox.line_alignment = 4;
+    textbox.active_shadows = 5;
+    textbox.italic_tilt = 0.25;
+    textbox.text_offset = 0xa0;
+    textbox.top_color = color();
+    textbox.bottom_color = color();
+    textbox.font_size = Vec2 { x: 12.0, y: 14.0 };
+    textbox.character_size = 2.0;
+    textbox.line_size = 3.0;
+    textbox.shadow_offset = Vec2 { x: 1.0, y: 2.0 };
+    textbox.shadow_scale = Vec2 { x: 3.0, y: 4.0 };
+    textbox.shadow_top_color = color();
+    textbox.shadow_bottom_color = color();
+    textbox.shadow_italic_tilt = 0.5;
+    textbox.data = vec![0, 1, 2];
     let mut output = Cursor::new(Vec::new());
     output.write_be(&textbox).unwrap();
     let bytes = output.into_inner();

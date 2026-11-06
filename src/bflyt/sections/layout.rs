@@ -1,10 +1,13 @@
 use binrw::{NullString, binrw};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 #[binrw]
 #[brw(magic = b"lyt1")]
 pub struct Layout {
     /// Total section size, including the 8-byte section header.
-    #[bw(calc = 0x1C + name.len() as u32 + 1)]
+    #[serde(skip)]
+    #[bw(map = |_: &u32| 0x1C + name.len() as u32 + 1)]
     pub size: u32,
     /// Nonzero when the layout is drawn from its middle.
     pub is_drawn_from_middle: u8,

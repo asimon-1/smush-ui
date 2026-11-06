@@ -1,6 +1,7 @@
 use binrw::binrw;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PaneFlags {
     pub is_visible: bool,
     pub transmits_alpha_to_children: bool,
@@ -24,7 +25,7 @@ impl PaneFlags {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum HorizontalOrigin {
     #[default]
     Center,
@@ -53,7 +54,7 @@ impl HorizontalOrigin {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum VerticalOrigin {
     #[default]
     Center,
@@ -82,7 +83,7 @@ impl VerticalOrigin {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PaneOrigin {
     pub x: HorizontalOrigin,
     pub y: VerticalOrigin,
@@ -108,6 +109,7 @@ impl PaneOrigin {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct Color {
     pub red: u8,
@@ -116,12 +118,14 @@ pub struct Color {
     pub alpha: u8,
 }
 
+#[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct Vec2 {
     pub x: f32,
     pub y: f32,
 }
 
+#[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct Vec3 {
     pub x: f32,
@@ -130,6 +134,7 @@ pub struct Vec3 {
 }
 
 /// The 76-byte pane payload at section offsets `0x8..0x54`.
+#[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct PaneInfo {
     /// Bit 0: visible. Bit 1: transmit alpha to children.
@@ -153,6 +158,7 @@ pub struct PaneInfo {
     pub size: Vec2,
 }
 
+#[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct MaterialInfo {
     pub top_left_color: Color,
@@ -160,8 +166,11 @@ pub struct MaterialInfo {
     pub bottom_left_color: Color,
     pub bottom_right_color: Color,
     pub material_index: u16,
-    #[bw(calc = texture_coordinates.len() as u16)]
-    pub texture_coordinate_count: u16,
+    #[serde(skip)]
+    #[bw(map = |_: &u16| texture_coordinates.len() as u16)]
+    texture_coordinate_count: u16,
     #[br(count = texture_coordinate_count)]
     pub texture_coordinates: Vec<[Vec2; 4]>,
 }
+
+impl MaterialInfo { pub fn new(top_left_color: Color, top_right_color: Color, bottom_left_color: Color, bottom_right_color: Color, material_index: u16, texture_coordinates: Vec<[Vec2; 4]>) -> Self { Self { top_left_color, top_right_color, bottom_left_color, bottom_right_color, material_index, texture_coordinate_count: 0, texture_coordinates } } }

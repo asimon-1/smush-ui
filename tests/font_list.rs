@@ -1,13 +1,14 @@
 use std::io::Cursor;
 
-use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::FontList;
+use binrw::{BinReaderExt, BinWriterExt};
 
 #[test]
 fn round_trips_font_filenames_and_offsets() {
-    let font_list = FontList {
-        filenames: vec!["main.bffnt".to_owned(), "icons.bffnt".to_owned()],
-    };
+    let font_list = FontList::new(vec![
+            "main.bffnt".to_owned(),
+            "icons.bffnt".to_owned(),
+        ]);
     let mut output = Cursor::new(Vec::new());
     output.write_le(&font_list).expect("font list should write");
     let bytes = output.into_inner();
