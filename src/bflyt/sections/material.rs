@@ -1,9 +1,12 @@
 use bilge::prelude::*;
-use binrw::{BinRead, BinResult, Endian, Error as BinError, binrw};
+use binrw::{BinRead, BinResult, BinWrite, Endian, Error as BinError, binrw};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Error, ErrorKind};
 
-use super::{Color, Vec2, common::fixed_string_to_string};
+use super::{
+    Color, Vec2,
+    common::{align_up, fixed_string_to_string, string_to_fixed_string, write_u32, write_u32_at},
+};
 
 #[bitsize(32, new = pub)]
 #[derive(
@@ -242,6 +245,114 @@ pub fn decode_material_payload(payload: &[u8]) -> BinResult<DecodedMaterialSecti
         reserved,
         materials,
     })
+}
+
+pub fn encode_material_payload(section: &DecodedMaterialSection) -> BinResult<Vec<u8>> {
+    let material_count = u16::try_from(section.materials.len())
+        .map_err(|_| material_error(0, "material count exceeds u16"))?;
+    let table_end = 4 + section.materials.len() * 4;
+    let mut payload = vec![0; table_end];
+    payload[..2].copy_from_slice(&material_count.to_le_bytes());
+    payload[2..4].copy_from_slice(&section.reserved.to_le_bytes());
+
+    for (index, material) in section.materials.iter().enumerate() {
+        let offset = u32::try_from(payload.len() + 8)
+            .map_err(|_| material_error(payload.len(), "material section is too large"))?;
+        write_u32_at(&mut payload, 4 + index * 4, offset, Endian::Little);
+        let record = encode_material_record(material)?;
+        payload.extend(record);
+        payload.resize(align_up(payload.len(), 4), 0);
+    }
+
+    Ok(payload)
+}
+
+fn encode_material_record(material: &MaterialEntry) -> BinResult<Vec<u8>> {
+    validate_material(material)?;
+
+    let mut record = Vec::new();
+    record.extend(
+        string_to_fixed_string::<0x1c>(&material.name)
+            .map_err(|error| material_error(0, error.to_string()))?,
+    );
+    write_u32(&mut record, reconstructed_flags(material), Endian::Little);
+    write_u32(&mut record, material.unknown_header_value, Endian::Little);
+
+    let mut writer = Cursor::new(record);
+    writer.set_position(writer.get_ref().len() as u64);
+    macro_rules! write_component {
+        ($value:expr) => {
+            BinWrite::write_options($value, &mut writer, Endian::Little, ())?
+        };
+    }
+
+    write_component!(&material.black_color);
+    write_component!(&material.white_color);
+    for value in &material.texture_references {
+        write_component!(value);
+    }
+    for value in &material.texture_transforms {
+        write_component!(value);
+    }
+    for value in &material.texture_coordinate_generators {
+        write_component!(value);
+    }
+    for value in &material.tev_stages {
+        write_component!(value);
+    }
+    if let Some(value) = &material.alpha_compare {
+        write_component!(value);
+    }
+    if let Some(value) = &material.blend_mode {
+        write_component!(value);
+    }
+    if let Some(value) = &material.separate_blend_logic_mode {
+        write_component!(value);
+    }
+    if let Some(value) = &material.indirect_texture_transform {
+        write_component!(value);
+    }
+    for value in &material.projection_texture_parameters {
+        write_component!(value);
+    }
+    if let Some(value) = &material.font_shadow_parameter {
+        write_component!(value);
+    }
+
+    Ok(writer.into_inner())
+}
+
+fn validate_material(material: &MaterialEntry) -> BinResult<()> {
+    if material.texture_references.len() > 3
+        || material.texture_transforms.len() > 3
+        || material.texture_coordinate_generators.len() > 3
+        || material.projection_texture_parameters.len() > 3
+    {
+        return invalid_material_payload(0, "material component count exceeds 3");
+    }
+    if material.tev_stages.len() > 7 {
+        return invalid_material_payload(0, "material TEV stage count exceeds 7");
+    }
+    if material.name.len() > 0x1c {
+        return invalid_material_payload(0, "material name exceeds 28 bytes");
+    }
+    Ok(())
+}
+
+fn reconstructed_flags(material: &MaterialEntry) -> u32 {
+    const DERIVED_FLAG_MASK: u32 = 0x0003_d7ff;
+
+    (u32::from(material.flags).value() & !DERIVED_FLAG_MASK)
+        | material.texture_references.len() as u32
+        | ((material.texture_transforms.len() as u32) << 2)
+        | ((material.texture_coordinate_generators.len() as u32) << 4)
+        | ((material.tev_stages.len() as u32) << 6)
+        | ((material.alpha_compare.is_some() as u32) << 9)
+        | ((material.blend_mode.is_some() as u32) << 10)
+        | ((material.separate_blend_logic_mode.is_some() as u32) << 12)
+        | ((material.indirect_texture_transform.is_some() as u32) << 14)
+        | ((material.projection_texture_parameters.len() as u32) << 15)
+        | ((material.font_shadow_parameter.is_some() as u32) << 17)
 }
 
 fn decode_material_record(record: &[u8], section_offset: usize) -> BinResult<MaterialEntry> {

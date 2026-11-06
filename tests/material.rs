@@ -6,6 +6,7 @@ use smush_ui::bflyt::sections::material::{
     AlphaCompare, BlendMode, FontShadowParameter, IndirectTextureTransform, MaterialFlags,
     ProjectionTextureParameter, TevStage, TextureCoordinateGenerator, TextureFilterFlags,
     TextureReference, TextureTransform, TextureWrapFlags, TextureWrapMode, decode_material_payload,
+    encode_material_payload,
 };
 use smush_ui::bflyt::sections::{Color, Vec2};
 
@@ -266,4 +267,49 @@ fn rejects_malformed_material_tables_and_records() {
 
     let trailing_data = material_section(vec![material_record("extra", 0, vec![0])]);
     assert!(decode_material_payload(&trailing_data).is_err());
+}
+
+#[test]
+fn encodes_material_payloads_with_reconstructed_flags() {
+    let flags = 2
+        | (1 << 2)
+        | (1 << 4)
+        | (2 << 6)
+        | (1 << 9)
+        | (1 << 10)
+        | (1 << 11)
+        | (1 << 12)
+        | (1 << 13)
+        | (1 << 14)
+        | (2 << 15)
+        | (1 << 17)
+        | (1 << 18)
+        | (1 << 19);
+    let payload = material_section(vec![material_record(
+        "complete",
+        flags,
+        vec![0; 8 + 20 + 16 + 8 + 8 + 4 + 4 + 12 + 40 + 8],
+    )]);
+    let mut decoded = decode_material_payload(&payload).expect("material should decode");
+    decoded.materials[0].flags =
+        MaterialFlags::from(u32::new(1 << 11 | 1 << 13 | 1 << 18 | 1 << 19));
+
+    assert_eq!(encode_material_payload(&decoded).unwrap(), payload);
+}
+
+#[test]
+fn rejects_material_component_counts_that_do_not_fit_in_flags() {
+    let payload = material_section(vec![material_record("limited", 0, Vec::new())]);
+    let mut decoded = decode_material_payload(&payload).expect("material should decode");
+    for _ in 0..4 {
+        decoded.materials[0]
+            .texture_references
+            .push(TextureReference {
+                texture_index: 0,
+                wrap_flags: TextureWrapFlags::default(),
+                filter_flags: TextureFilterFlags::default(),
+            });
+    }
+
+    assert!(encode_material_payload(&decoded).is_err());
 }
