@@ -37,7 +37,10 @@ pub use parts::{
     TextboxUsageFlags,
 };
 pub use picture::Picture;
-pub use textbox::Textbox;
+pub use textbox::{
+    LineTransform, PerCharacterTransform, PerCharacterTransformLoopMode, TextAlignment,
+    TextHorizontalOrigin, TextOrigin, TextPaneFlags, TextVerticalOrigin, Textbox, TextboxData,
+};
 pub use texture_list::TextureList;
 pub use user::{User, UserData, UserDataEntry, UserDataValue, UserSystemData};
 pub use window::{

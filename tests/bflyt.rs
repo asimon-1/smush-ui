@@ -206,3 +206,22 @@ fn window_metrics_and_flags_are_typed_in_json() {
         serde_json::from_str(&json).expect("typed window JSON should deserialize");
     assert_eq!(restored.sections.len(), bflyt.sections.len());
 }
+
+#[test]
+fn textbox_metadata_is_typed_in_json() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/info_training.bflyt");
+    let bytes = fs::read(path).expect("textbox fixture should be readable");
+    let bflyt: Bflyt = Cursor::new(bytes)
+        .read_le()
+        .expect("textbox fixture should parse");
+
+    let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
+    assert!(!json.contains("\"active_shadows\""));
+    assert!(json.contains("\"vertical\":\"Center\""));
+    assert!(json.contains("\"line_alignment\":\"Synchronous\""));
+    assert_eq!(json.matches("\"line_transforms\"").count(), 57);
+
+    let restored: Bflyt =
+        serde_json::from_str(&json).expect("typed textbox JSON should deserialize");
+    assert_eq!(restored.sections.len(), bflyt.sections.len());
+}
