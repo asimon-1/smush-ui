@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
-use smush_ui::bflyt::sections::{PaneFlags, PaneInfo, PaneOrigin, Vec2, Vec3, Window};
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::sections::{PaneFlags, PaneInfo, PaneOrigin, Vec2, Vec3, Window};
 
 #[test]
 fn window_writes_fixed_fields_and_trailing_data() {

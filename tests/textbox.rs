@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
-use smush_ui::bflyt::sections::{Color, PaneFlags, PaneInfo, PaneOrigin, Textbox, Vec2, Vec3};
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::sections::{Color, PaneFlags, PaneInfo, PaneOrigin, Textbox, Vec2, Vec3};
 
 fn color() -> Color {
     Color {

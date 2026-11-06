@@ -15,8 +15,12 @@ pub struct FontList {
         Some(current)
     }).collect())]
     pub offsets: Vec<u32>,
-    #[br(parse_with = parse_from_iter(offsets.iter().map(|&offset| {
+    #[br(
+    parse_with = parse_from_iter(offsets.iter().map(|&offset| {
         offset - 4 * filename_count
-    })))]
-    pub filenames: Vec<NullString>,
+    })),
+    try_map = |filenames: Vec<NullString>| filenames.into_iter().map(String::try_from).collect::<Result<Vec<_>, _>>()
+    )]
+    #[bw(map = |filenames: &Vec<String>| filenames.iter().map(|filename| NullString::from(filename.as_str())).collect::<Vec<_>>())]
+    pub filenames: Vec<String>,
 }

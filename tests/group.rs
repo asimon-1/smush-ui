@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
-use smush_ui::bflyt::sections::Group;
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::sections::Group;
 
 #[test]
 fn round_trips_fixed_width_group_names() {

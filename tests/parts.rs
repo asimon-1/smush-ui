@@ -1,7 +1,9 @@
 use std::io::Cursor;
 
-use smush_ui::bflyt::sections::{PaneFlags, PaneInfo, PaneOrigin, Parts, PartsProperty, Vec2, Vec3};
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::sections::{
+    PaneFlags, PaneInfo, PaneOrigin, Parts, PartsProperty, Vec2, Vec3,
+};
 
 #[test]
 fn parts_round_trips_properties_and_trailing_data() {

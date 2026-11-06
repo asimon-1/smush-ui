@@ -1,7 +1,7 @@
 use std::{fs, io::Cursor, path::Path};
 
-use smush_ui::bflyt::Bflyt;
 use binrw::{BinReaderExt, BinWriterExt};
+use smush_ui::bflyt::Bflyt;
 
 #[rustfmt::skip]
 const BFLYT: &[u8] = &[
@@ -56,9 +56,8 @@ fn parses_fields() {
         _bflyt.sections[0]
             .as_layout()
             .expect("section couldn't parse as layout")
-            .name
-            .as_slice(),
-        b"Main"
+            .name,
+        "Main"
     );
 }
 
@@ -67,8 +66,15 @@ fn parses_every_real_bflyt_fixture() {
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets");
     let fixtures: Vec<_> = fs::read_dir(&fixture_dir)
         .expect("test_assets directory should exist")
-        .map(|entry| entry.expect("fixture directory entries should be readable").path())
-        .filter(|path| path.extension().is_some_and(|extension| extension == "bflyt"))
+        .map(|entry| {
+            entry
+                .expect("fixture directory entries should be readable")
+                .path()
+        })
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "bflyt")
+        })
         .collect();
 
     assert!(
@@ -77,13 +83,12 @@ fn parses_every_real_bflyt_fixture() {
     );
 
     for path in fixtures {
-        let bytes = fs::read(&path).unwrap_or_else(|error| {
-            panic!("{} should be readable: {error}", path.display())
-        });
+        let bytes = fs::read(&path)
+            .unwrap_or_else(|error| panic!("{} should be readable: {error}", path.display()));
         let mut input = Cursor::new(bytes.as_slice());
-        let bflyt: Bflyt = input.read_le().unwrap_or_else(|error| {
-            panic!("{} should parse: {error}", path.display())
-        });
+        let bflyt: Bflyt = input
+            .read_le()
+            .unwrap_or_else(|error| panic!("{} should parse: {error}", path.display()));
 
         assert_eq!(
             input.position(),
