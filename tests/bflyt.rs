@@ -187,3 +187,22 @@ fn parts_overrides_are_typed_in_json() {
     let restored: Bflyt = serde_json::from_str(&json).expect("typed parts JSON should deserialize");
     assert_eq!(restored.sections.len(), bflyt.sections.len());
 }
+
+#[test]
+fn window_metrics_and_flags_are_typed_in_json() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/info_training.bflyt");
+    let bytes = fs::read(path).expect("window fixture should be readable");
+    let bflyt: Bflyt = Cursor::new(bytes)
+        .read_le()
+        .expect("window fixture should parse");
+
+    let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
+    assert!(!json.contains("\"rectangle\""));
+    assert_eq!(json.matches("\"content_expansion_left\"").count(), 5);
+    assert_eq!(json.matches("\"frame_thickness_bottom\"").count(), 5);
+    assert!(json.contains("\"frame_mode\":\"HorizontalFrameOnly\""));
+
+    let restored: Bflyt =
+        serde_json::from_str(&json).expect("typed window JSON should deserialize");
+    assert_eq!(restored.sections.len(), bflyt.sections.len());
+}

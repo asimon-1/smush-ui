@@ -6,6 +6,28 @@ use std::io::{Cursor, Read, Seek, Write};
 use super::common::{write_u16, write_u32};
 use super::{Color, PaneInfo, Vec2};
 
+#[bitsize(2)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, FromBits, PartialEq, Serialize)]
+pub enum WindowFrameMode {
+    #[default]
+    FullFrame,
+    HorizontalFrame,
+    HorizontalFrameOnly,
+    Reserved,
+}
+
+#[bitsize(8, new = pub)]
+#[derive(
+    Clone, Copy, DebugBits, DefaultBits, DeserializeBits, Eq, FromBits, PartialEq, SerializeBits,
+)]
+pub struct WindowFlags {
+    pub use_top_left_frame_material_for_all: bool,
+    pub tint_frames_with_content_colors: bool,
+    pub frame_mode: WindowFrameMode,
+    pub hide_content: bool,
+    pub reserved: u3,
+}
+
 #[derive(Serialize, Deserialize)]
 #[binrw]
 #[brw(magic = b"wnd1")]
@@ -14,20 +36,29 @@ pub struct Window {
     #[bw(map = |_: &u32| 0x70 + data.serialized_size() as u32)]
     pub size: u32,
     pub pane: PaneInfo,
-    pub rectangle: [f32; 4],
+    pub content_expansion_left: i16,
+    pub content_expansion_right: i16,
+    pub content_expansion_top: i16,
+    pub content_expansion_bottom: i16,
+    pub frame_thickness_left: i16,
+    pub frame_thickness_right: i16,
+    pub frame_thickness_top: i16,
+    pub frame_thickness_bottom: i16,
     #[serde(skip)]
     #[bw(map = |_: &u8| data.frames.len() as u8)]
-    frame_data_count: u8,
-    pub flags: u8,
+    frame_count: u8,
+    #[br(map = |bits: u8| WindowFlags::from(u8::new(bits)))]
+    #[bw(map = |flags: &WindowFlags| u8::from(*flags).value())]
+    pub flags: WindowFlags,
     #[serde(skip)]
     pub padding: [u8; 2],
     #[serde(skip)]
     #[bw(map = |_: &u32| 0x70)]
-    material_info_offset: u32,
+    content_offset: u32,
     #[serde(skip)]
     #[bw(map = |_: &u32| 0x70 + data.content_size() as u32)]
     frame_table_offset: u32,
-    #[br(parse_with = read_window_data, args(size, frame_data_count, material_info_offset, frame_table_offset))]
+    #[br(parse_with = read_window_data, args(size, frame_count, content_offset, frame_table_offset))]
     #[bw(write_with = write_window_data)]
     #[serde(flatten)]
     pub data: WindowData,
@@ -189,11 +220,18 @@ impl Window {
         Self {
             size: 0,
             pane,
-            rectangle: [0.0; 4],
-            frame_data_count: 0,
-            flags: 0,
+            content_expansion_left: 0,
+            content_expansion_right: 0,
+            content_expansion_top: 0,
+            content_expansion_bottom: 0,
+            frame_thickness_left: 0,
+            frame_thickness_right: 0,
+            frame_thickness_top: 0,
+            frame_thickness_bottom: 0,
+            frame_count: 0,
+            flags: WindowFlags::default(),
             padding: [0; 2],
-            material_info_offset: 0,
+            content_offset: 0,
             frame_table_offset: 0,
             data: WindowData {
                 content: WindowContent {
