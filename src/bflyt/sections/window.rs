@@ -18,6 +18,7 @@ pub struct Window {
     #[bw(map = |_: &u8| data.frames.len() as u8)]
     frame_data_count: u8,
     pub flags: u8,
+    #[serde(skip)]
     pub padding: [u8; 2],
     #[serde(skip)]
     #[bw(map = |_: &u32| 0x70)]

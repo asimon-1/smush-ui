@@ -11,6 +11,7 @@ pub struct Layout {
     pub size: u32,
     /// Nonzero when the layout is drawn from its middle.
     pub is_drawn_from_middle: u8,
+    #[serde(skip)]
     padding: [u8; 3],
     pub width: f32,
     pub height: f32,

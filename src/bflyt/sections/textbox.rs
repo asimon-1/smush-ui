@@ -19,6 +19,7 @@ pub struct Textbox {
     pub origin: u8,
     pub line_alignment: u8,
     pub active_shadows: u8,
+    #[serde(skip)]
     pub padding: u8,
     pub italic_tilt: f32,
     #[serde(skip)]

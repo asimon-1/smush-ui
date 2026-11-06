@@ -14,10 +14,9 @@ pub struct Group {
     #[br(try_map = fixed_string_to_string::<24>)]
     #[bw(try_map = string_to_fixed_string::<24>)]
     pub name: String,
-    #[bw(map = |_: &u16| children.len() as u16)]
+    #[bw(map = |_: &u32| children.len() as u32)]
     #[serde(skip)]
-    child_count: u16,
-    pub padding: [u8; 2],
+    child_count: u32,
     #[br(count = child_count, try_map = |children: Vec<[u8; 24]>| children.into_iter().map(fixed_string_to_string::<24>).collect::<Result<Vec<_>, _>>())]
     #[bw(try_map = |children: &Vec<String>| children.iter().map(string_to_fixed_string::<24>).collect::<Result<Vec<_>, _>>())]
     /// NUL-terminated child names, each in a fixed 24-byte buffer.
@@ -25,12 +24,11 @@ pub struct Group {
 }
 
 impl Group {
-    pub fn new(name: String, padding: [u8; 2], children: Vec<String>) -> Self {
+    pub fn new(name: String, children: Vec<String>) -> Self {
         Self {
             size: 0,
             name,
             child_count: 0,
-            padding,
             children,
         }
     }

@@ -17,8 +17,8 @@ use self::sections::{
 pub struct Bflyt {
     pub version: [u8; 4],
     pub filesize: u32,
-    pub num_sections: u16,
-    padding: [u8; 2],
+    #[bw(map = |_: &u32| sections.len() as u32)]
+    pub num_sections: u32,
     #[br(parse_with = |reader, endian, _: ()| read_sections(reader, endian, num_sections))]
     pub sections: Vec<Section>,
 }
@@ -26,7 +26,7 @@ pub struct Bflyt {
 fn read_sections<R: Read + Seek>(
     reader: &mut R,
     endian: Endian,
-    count: u16,
+    count: u32,
 ) -> BinResult<Vec<Section>> {
     let mut sections = Vec::with_capacity(count as usize);
 
