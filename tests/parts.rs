@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use binrw::{BinReaderExt, BinWriterExt};
 use smush_ui::bflyt::sections::{
-    PaneFlags, PaneInfo, PaneOrigin, Parts, PartsProperty, Vec2, Vec3,
+    PaneFlags, PaneInfo, PaneOrigin, Parts, PartsData, PartsProperty, Vec2, Vec3,
 };
 
 #[test]
@@ -39,15 +39,18 @@ fn parts_round_trips_properties_and_trailing_data() {
             ext_user_data_offset: 0,
             pane_basic_info_offset: 0,
         }],
-        vec![0xaa, 0xbb],
+        PartsData {
+            part_name: "Part".to_owned(),
+            referenced_data: vec![0xaa, 0xbb],
+        },
     );
     let mut output = Cursor::new(Vec::new());
     output.write_be(&parts).unwrap();
     let bytes = output.into_inner();
 
-    assert_eq!(u32::from_be_bytes(bytes[4..8].try_into().unwrap()), 0x8a);
+    assert_eq!(u32::from_be_bytes(bytes[4..8].try_into().unwrap()), 0x92);
     assert_eq!(u32::from_be_bytes(bytes[0x54..0x58].try_into().unwrap()), 1);
-    assert_eq!(&bytes[0x88..], &[0xaa, 0xbb]);
+    assert_eq!(&bytes[0x88..], b"Part\0\0\0\0\xaa\xbb");
 
     let _: Parts = Cursor::new(bytes).read_be().unwrap();
 }
