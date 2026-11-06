@@ -1,11 +1,14 @@
 use bilge::prelude::*;
 use binrw::{BinRead, BinResult, BinWrite, Endian, Error as BinError, binrw};
 use serde::{Deserialize, Serialize};
-use std::io::{Cursor, Error, ErrorKind};
+use std::io::{Cursor, Error, ErrorKind, Read, Seek, Write};
 
 use super::{
     Color, Vec2,
-    common::{align_up, fixed_string_to_string, string_to_fixed_string, write_u32, write_u32_at},
+    common::{
+        align_up, fixed_string_to_string, lossless_vec2, string_to_fixed_string, write_u32,
+        write_u32_at,
+    },
 };
 
 #[bitsize(32, new = pub)]
@@ -133,7 +136,9 @@ pub struct IndirectTextureTransform {
 #[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct ProjectionTextureParameter {
+    #[serde(with = "lossless_vec2")]
     pub translation: Vec2,
+    #[serde(with = "lossless_vec2")]
     pub scale: Vec2,
     pub mode: u8,
     pub reserved: [u8; 3],
@@ -151,7 +156,8 @@ pub struct MaterialEntry {
     #[br(try_map = fixed_string_to_string::<0x1c>)]
     pub name: String,
     #[br(map = |raw: u32| MaterialFlags::from(u32::new(raw)))]
-    pub flags: MaterialFlags,
+    #[serde(skip)]
+    flags: MaterialFlags,
     pub unknown_header_value: u32,
     pub black_color: Color,
     pub white_color: Color,
@@ -175,15 +181,19 @@ pub struct MaterialEntry {
     pub projection_texture_parameters: Vec<ProjectionTextureParameter>,
     #[br(if(flags.has_font_shadow_parameter()))]
     pub font_shadow_parameter: Option<FontShadowParameter>,
+    #[br(count = 44, if(flags.reserved_i().value() & 1 != 0))]
+    pub unk1: Option<Vec<u8>>,
+    #[br(calc = false)]
+    pub texture_only: bool,
+    #[br(calc = false)]
+    pub unk2: bool,
+    #[br(calc = false)]
+    pub alpha_interpolation: bool,
+    #[br(calc = u12::new(0))]
+    pub reserved_flags: u12,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct DecodedMaterialSection {
-    pub reserved: u16,
-    pub materials: Vec<MaterialEntry>,
-}
-
-pub fn decode_material_payload(payload: &[u8]) -> BinResult<DecodedMaterialSection> {
+pub fn decode_material_payload(payload: &[u8]) -> BinResult<Material> {
     if payload.len() < 4 {
         return invalid_material_payload(0, "material count table is truncated");
     }
@@ -241,25 +251,25 @@ pub fn decode_material_payload(payload: &[u8]) -> BinResult<DecodedMaterialSecti
         )?);
     }
 
-    Ok(DecodedMaterialSection {
+    Ok(Material {
         reserved,
         materials,
     })
 }
 
-pub fn encode_material_payload(section: &DecodedMaterialSection) -> BinResult<Vec<u8>> {
-    let material_count = u16::try_from(section.materials.len())
+pub fn encode_material_payload(material: &Material) -> BinResult<Vec<u8>> {
+    let material_count = u16::try_from(material.materials.len())
         .map_err(|_| material_error(0, "material count exceeds u16"))?;
-    let table_end = 4 + section.materials.len() * 4;
+    let table_end = 4 + material.materials.len() * 4;
     let mut payload = vec![0; table_end];
     payload[..2].copy_from_slice(&material_count.to_le_bytes());
-    payload[2..4].copy_from_slice(&section.reserved.to_le_bytes());
+    payload[2..4].copy_from_slice(&material.reserved.to_le_bytes());
 
-    for (index, material) in section.materials.iter().enumerate() {
+    for (index, entry) in material.materials.iter().enumerate() {
         let offset = u32::try_from(payload.len() + 8)
             .map_err(|_| material_error(payload.len(), "material section is too large"))?;
         write_u32_at(&mut payload, 4 + index * 4, offset, Endian::Little);
-        let record = encode_material_record(material)?;
+        let record = encode_material_record(entry)?;
         payload.extend(record);
         payload.resize(align_up(payload.len(), 4), 0);
     }
@@ -318,6 +328,9 @@ fn encode_material_record(material: &MaterialEntry) -> BinResult<Vec<u8>> {
     if let Some(value) = &material.font_shadow_parameter {
         write_component!(value);
     }
+    if let Some(value) = &material.unk1 {
+        write_component!(value);
+    }
 
     Ok(writer.into_inner())
 }
@@ -333,6 +346,9 @@ fn validate_material(material: &MaterialEntry) -> BinResult<()> {
     if material.tev_stages.len() > 7 {
         return invalid_material_payload(0, "material TEV stage count exceeds 7");
     }
+    if material.unk1.as_ref().is_some_and(|data| data.len() != 44) {
+        return invalid_material_payload(0, "unknown bit-19 data must be 44 bytes");
+    }
     if material.name.len() > 0x1c {
         return invalid_material_payload(0, "material name exceeds 28 bytes");
     }
@@ -340,9 +356,13 @@ fn validate_material(material: &MaterialEntry) -> BinResult<()> {
 }
 
 fn reconstructed_flags(material: &MaterialEntry) -> u32 {
-    const DERIVED_FLAG_MASK: u32 = 0x0003_d7ff;
+    const DERIVED_FLAG_MASK: u32 = 0x000b_d7ff;
 
-    (u32::from(material.flags).value() & !DERIVED_FLAG_MASK)
+    (((u32::from(material.reserved_flags).value() << 20)
+        | ((material.texture_only as u32) << 11)
+        | ((material.unk2 as u32) << 13)
+        | ((material.alpha_interpolation as u32) << 18))
+        & !DERIVED_FLAG_MASK)
         | material.texture_references.len() as u32
         | ((material.texture_transforms.len() as u32) << 2)
         | ((material.texture_coordinate_generators.len() as u32) << 4)
@@ -353,6 +373,7 @@ fn reconstructed_flags(material: &MaterialEntry) -> u32 {
         | ((material.indirect_texture_transform.is_some() as u32) << 14)
         | ((material.projection_texture_parameters.len() as u32) << 15)
         | ((material.font_shadow_parameter.is_some() as u32) << 17)
+        | ((material.unk1.is_some() as u32) << 19)
 }
 
 fn decode_material_record(record: &[u8], section_offset: usize) -> BinResult<MaterialEntry> {
@@ -361,12 +382,17 @@ fn decode_material_record(record: &[u8], section_offset: usize) -> BinResult<Mat
     }
 
     let mut reader = Cursor::new(record);
-    let material = MaterialEntry::read_options(&mut reader, Endian::Little, ()).map_err(|_| {
-        material_error(
-            section_offset + reader.position() as usize,
-            "material record is truncated",
-        )
-    })?;
+    let mut material =
+        MaterialEntry::read_options(&mut reader, Endian::Little, ()).map_err(|_| {
+            material_error(
+                section_offset + reader.position() as usize,
+                "material record is truncated",
+            )
+        })?;
+    material.texture_only = material.flags.texture_only();
+    material.unk2 = material.flags.unk1();
+    material.alpha_interpolation = material.flags.alpha_interpolation();
+    material.reserved_flags = u12::new(material.flags.reserved_i().value() >> 1);
 
     if reader.position() != record.len() as u64 {
         return invalid_material_payload(
@@ -390,18 +416,71 @@ fn material_error(position: usize, message: impl Into<String>) -> BinError {
 }
 
 #[derive(Serialize, Deserialize)]
-#[binrw]
-#[brw(magic = b"mat1")]
 pub struct Material {
     #[serde(skip)]
-    #[bw(map = |_: &u32| 8 + data.len() as u32)]
-    size: u32,
-    #[br(count = size - 8)]
-    pub data: Vec<u8>,
+    reserved: u16,
+    pub materials: Vec<MaterialEntry>,
 }
 
 impl Material {
-    pub fn new(data: Vec<u8>) -> Self {
-        Self { size: 0, data }
+    pub fn new(materials: Vec<MaterialEntry>) -> Self {
+        Self {
+            reserved: 0,
+            materials,
+        }
+    }
+}
+
+impl BinRead for Material {
+    type Args<'a> = ();
+
+    fn read_options<R: Read + Seek>(
+        reader: &mut R,
+        _: Endian,
+        _: Self::Args<'_>,
+    ) -> BinResult<Self> {
+        let section_start = reader.stream_position()?;
+        let mut magic = [0; 4];
+        reader.read_exact(&mut magic)?;
+        if &magic != b"mat1" {
+            return Err(BinError::AssertFail {
+                pos: section_start,
+                message: format!("expected mat1, found {:?}", String::from_utf8_lossy(&magic)),
+            });
+        }
+
+        let size = u32::read_options(reader, Endian::Little, ())?;
+        if size < 8 {
+            return Err(material_error(
+                section_start as usize,
+                "material section is smaller than its header",
+            ));
+        }
+        let mut payload = vec![0; (size - 8) as usize];
+        reader.read_exact(&mut payload)?;
+        let decoded = decode_material_payload(&payload)?;
+        Ok(Self {
+            reserved: decoded.reserved,
+            materials: decoded.materials,
+        })
+    }
+}
+
+impl BinWrite for Material {
+    type Args<'a> = ();
+
+    fn write_options<W: Write + Seek>(
+        &self,
+        writer: &mut W,
+        _: Endian,
+        _: Self::Args<'_>,
+    ) -> BinResult<()> {
+        let payload = encode_material_payload(self)?;
+        let size = u32::try_from(payload.len() + 8)
+            .map_err(|_| material_error(0, "material section is too large"))?;
+        writer.write_all(b"mat1")?;
+        writer.write_all(&size.to_le_bytes())?;
+        writer.write_all(&payload)?;
+        Ok(())
     }
 }

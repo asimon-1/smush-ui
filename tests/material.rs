@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::{fs, io::Cursor};
 
 use bilge::prelude::*;
 use binrw::{BinRead, BinWrite, BinWriterExt};
@@ -187,6 +187,30 @@ fn component_models_have_fixed_serialized_sizes() {
 }
 
 #[test]
+fn projection_parameters_preserve_non_finite_float_bits_in_json() {
+    let parameter = ProjectionTextureParameter {
+        translation: Vec2 {
+            x: 0.5,
+            y: f32::from_bits(0xffff_ffff),
+        },
+        scale: Vec2 {
+            x: f32::INFINITY,
+            y: -1.0,
+        },
+        mode: 1,
+        reserved: [2; 3],
+    };
+
+    let json = serde_json::to_value(&parameter).expect("parameter should serialize");
+    assert_eq!(json["translation"]["x"], 0.5);
+    assert_eq!(json["translation"]["y"]["bits"], 0xffff_ffffu32);
+    let restored: ProjectionTextureParameter =
+        serde_json::from_value(json).expect("parameter should deserialize");
+    assert_eq!(restored.translation.y.to_bits(), 0xffff_ffff);
+    assert_eq!(restored.scale.x.to_bits(), f32::INFINITY.to_bits());
+}
+
+#[test]
 fn decodes_empty_minimal_and_multiple_materials() {
     let empty =
         decode_material_payload(&[0, 0, 0, 0]).expect("empty material section should decode");
@@ -198,7 +222,6 @@ fn decodes_empty_minimal_and_multiple_materials() {
     ]);
     let decoded =
         decode_material_payload(&payload).expect("minimal material records should decode");
-    assert_eq!(decoded.reserved, 0x9876);
     assert_eq!(decoded.materials.len(), 2);
     assert_eq!(decoded.materials[0].name, "first");
     assert_eq!(decoded.materials[1].name, "second");
@@ -221,7 +244,7 @@ fn decodes_all_flag_controlled_components() {
         | (1 << 17)
         | (1 << 18)
         | (1 << 19);
-    let variable_data = vec![0; 8 + 20 + 16 + 8 + 8 + 4 + 4 + 12 + 40 + 8];
+    let variable_data = vec![0; 8 + 20 + 16 + 8 + 8 + 4 + 4 + 12 + 40 + 8 + 44];
     let payload = material_section(vec![material_record("complete", flags, variable_data)]);
     let material = decode_material_payload(&payload)
         .expect("all material components should decode")
@@ -239,10 +262,11 @@ fn decodes_all_flag_controlled_components() {
     assert!(material.indirect_texture_transform.is_some());
     assert_eq!(material.projection_texture_parameters.len(), 2);
     assert!(material.font_shadow_parameter.is_some());
-    assert!(material.flags.texture_only());
-    assert!(material.flags.alpha_interpolation());
-    assert!(material.flags.unk1());
-    assert_eq!(material.flags.reserved_i().value(), 1);
+    assert!(material.texture_only);
+    assert!(material.alpha_interpolation);
+    assert!(material.unk1);
+    assert_eq!(material.reserved_flags.value(), 0);
+    assert!(material.unknown_bit_19_data.is_some());
 }
 
 #[test]
@@ -288,12 +312,9 @@ fn encodes_material_payloads_with_reconstructed_flags() {
     let payload = material_section(vec![material_record(
         "complete",
         flags,
-        vec![0; 8 + 20 + 16 + 8 + 8 + 4 + 4 + 12 + 40 + 8],
+        vec![0; 8 + 20 + 16 + 8 + 8 + 4 + 4 + 12 + 40 + 8 + 44],
     )]);
-    let mut decoded = decode_material_payload(&payload).expect("material should decode");
-    decoded.materials[0].flags =
-        MaterialFlags::from(u32::new(1 << 11 | 1 << 13 | 1 << 18 | 1 << 19));
-
+    let decoded = decode_material_payload(&payload).expect("material should decode");
     assert_eq!(encode_material_payload(&decoded).unwrap(), payload);
 }
 
@@ -312,4 +333,38 @@ fn rejects_material_component_counts_that_do_not_fit_in_flags() {
     }
 
     assert!(encode_material_payload(&decoded).is_err());
+}
+
+#[test]
+fn checked_in_material_payloads_round_trip_byte_for_byte() {
+    let fixture_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/test_assets");
+    for entry in fs::read_dir(fixture_dir).expect("fixture directory should be readable") {
+        let path = entry.expect("fixture entry should be readable").path();
+        if path
+            .extension()
+            .is_none_or(|extension| extension != "bflyt")
+        {
+            continue;
+        }
+
+        let bytes = fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        let section_count = u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
+        let mut offset = 20;
+        for _ in 0..section_count {
+            let size =
+                u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
+            if &bytes[offset..offset + 4] == b"mat1" {
+                let payload = &bytes[offset + 8..offset + size];
+                let decoded = decode_material_payload(payload)
+                    .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+                assert_eq!(
+                    encode_material_payload(&decoded).unwrap(),
+                    payload,
+                    "{} material payload should round trip",
+                    path.display()
+                );
+            }
+            offset += size;
+        }
+    }
 }

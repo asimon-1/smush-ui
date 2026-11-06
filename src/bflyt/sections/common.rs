@@ -139,6 +139,115 @@ pub struct Vec2 {
     pub y: f32,
 }
 
+pub(crate) mod lossless_vec2 {
+    use super::Vec2;
+    use serde::{
+        Deserialize, Deserializer, Serialize, Serializer,
+        de::{self, MapAccess, Visitor},
+        ser::SerializeMap,
+    };
+
+    pub fn serialize<S>(value: &Vec2, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("x", &JsonFloat(value.x))?;
+        map.serialize_entry("y", &JsonFloat(value.y))?;
+        map.end()
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec2, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct JsonVec2 {
+            x: JsonFloat,
+            y: JsonFloat,
+        }
+
+        let value = JsonVec2::deserialize(deserializer)?;
+        Ok(Vec2 {
+            x: value.x.0,
+            y: value.y.0,
+        })
+    }
+
+    struct JsonFloat(f32);
+
+    impl Serialize for JsonFloat {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            if self.0.is_finite() {
+                serializer.serialize_f32(self.0)
+            } else {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("bits", &self.0.to_bits())?;
+                map.end()
+            }
+        }
+    }
+
+    impl<'de> Deserialize<'de> for JsonFloat {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct JsonFloatVisitor;
+
+            impl<'de> Visitor<'de> for JsonFloatVisitor {
+                type Value = JsonFloat;
+
+                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    formatter.write_str("a JSON number or an object containing float bits")
+                }
+
+                fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    Ok(JsonFloat(value as f32))
+                }
+
+                fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    Ok(JsonFloat(value as f32))
+                }
+
+                fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    Ok(JsonFloat(value as f32))
+                }
+
+                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                where
+                    A: MapAccess<'de>,
+                {
+                    let mut bits = None;
+                    while let Some(key) = map.next_key::<String>()? {
+                        if key == "bits" {
+                            bits = Some(map.next_value()?);
+                        } else {
+                            return Err(de::Error::unknown_field(&key, &["bits"]));
+                        }
+                    }
+                    bits.map(|value| JsonFloat(f32::from_bits(value)))
+                        .ok_or_else(|| de::Error::missing_field("bits"))
+                }
+            }
+
+            deserializer.deserialize_any(JsonFloatVisitor)
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct Vec3 {

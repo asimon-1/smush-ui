@@ -22,7 +22,7 @@ fn round_trips_control_user_and_material_payloads() {
             reserved: 0,
         }],
     });
-    let material = Material::new(vec![6, 7, 8, 9]);
+    let material = Material::new(Vec::new());
 
     let mut output = Cursor::new(Vec::new());
     output.write_be(&control).expect("control should write");
@@ -40,6 +40,7 @@ fn round_trips_control_user_and_material_payloads() {
     assert_eq!(parsed_control.data.pane_bindings, ["Pane"]);
     let parsed_user: User = input.read_be().expect("user data should parse");
     assert_eq!(parsed_user.data.entries[0].name, "Value");
-    let _: Material = input.read_be().expect("material should parse");
+    let parsed_material: Material = input.read_be().expect("material should parse");
+    assert!(parsed_material.materials.is_empty());
     assert_eq!(input.position(), bytes.len() as u64);
 }

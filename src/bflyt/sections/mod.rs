@@ -28,7 +28,12 @@ pub use group::Group;
 pub use group_end::GroupEnd;
 pub use group_start::GroupStart;
 pub use layout::Layout;
-pub use material::Material;
+pub use material::{
+    AlphaCompare, BlendMode, FontShadowParameter, IndirectTextureTransform, Material,
+    MaterialEntry, MaterialFlags, ProjectionTextureParameter, TevStage, TextureCoordinateGenerator,
+    TextureFilterFlags, TextureFilterMode, TextureReference, TextureTransform, TextureWrapFlags,
+    TextureWrapMode,
+};
 pub use pane::Pane;
 pub use pane_end::PaneEnd;
 pub use pane_start::PaneStart;
