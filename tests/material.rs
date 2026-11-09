@@ -264,9 +264,9 @@ fn decodes_all_flag_controlled_components() {
     assert!(material.font_shadow_parameter.is_some());
     assert!(material.texture_only);
     assert!(material.alpha_interpolation);
-    assert!(material.unk1);
+    assert!(material.unk2);
     assert_eq!(material.reserved_flags.value(), 0);
-    assert!(material.unknown_bit_19_data.is_some());
+    assert!(material.unk1.is_some());
 }
 
 #[test]
