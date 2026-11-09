@@ -1,5 +1,6 @@
 target/
 Cargo.lock
+!/README.md
 
 # Keep the directory placeholder, but do not commit binary test fixtures.
 /tests/test_assets/*
