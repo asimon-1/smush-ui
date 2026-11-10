@@ -54,6 +54,7 @@ pub struct PartsMaterialUsageFlags {
 /// The compact common-pane override stored by a parts property.
 #[derive(Serialize, Deserialize)]
 #[binrw]
+#[non_exhaustive]
 pub struct PartsPaneBasicInfo {
     #[br(try_map = fixed_string_to_string::<8>)]
     #[bw(try_map = string_to_fixed_string::<8>)]
@@ -62,10 +63,8 @@ pub struct PartsPaneBasicInfo {
     pub rotation: Vec3,
     pub scale: Vec2,
     pub size: Vec2,
-    pub alpha: u8,
-    #[serde(skip)]
     #[brw(pad_after = 3)]
-    padding: (),
+    pub alpha: u8,
 }
 
 impl PartsPaneBasicInfo {
@@ -84,7 +83,6 @@ impl PartsPaneBasicInfo {
             scale,
             size,
             alpha,
-            padding: (),
         }
     }
 }

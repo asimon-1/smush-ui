@@ -1,7 +1,7 @@
 use binrw::binrw;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 #[binrw]
 #[brw(magic = b"grs1")]
 /// Empty marker which follows a `grp1` section.
