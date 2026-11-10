@@ -337,7 +337,7 @@ fn rejects_material_component_counts_that_do_not_fit_in_flags() {
 
 #[test]
 fn checked_in_material_payloads_round_trip_byte_for_byte() {
-    let fixture_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/test_assets");
+    let fixture_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/test_assets/bflyt");
     for entry in fs::read_dir(fixture_dir).expect("fixture directory should be readable") {
         let path = entry.expect("fixture entry should be readable").path();
         if path

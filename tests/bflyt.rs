@@ -111,7 +111,7 @@ fn derives_filesize_after_json_changes_section_size() {
 
 #[test]
 fn every_real_bflyt_fixture_round_trips_through_json() {
-    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets");
+    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bflyt");
     let fixtures: Vec<_> = fs::read_dir(&fixture_dir)
         .expect("test_assets directory should exist")
         .map(|entry| {
@@ -175,8 +175,8 @@ fn every_real_bflyt_fixture_round_trips_through_json() {
 
 #[test]
 fn pane_boundaries_are_a_json_children_hierarchy() {
-    let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/com_btn_arrow_00.bflyt");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/test_assets/bflyt/com_btn_arrow_00.bflyt");
     let bytes = fs::read(path).expect("pane hierarchy fixture should be readable");
     let bflyt: Bflyt = Cursor::new(bytes)
         .read_le()
@@ -203,7 +203,8 @@ fn pane_boundaries_are_a_json_children_hierarchy() {
 
 #[test]
 fn group_boundaries_are_a_json_children_hierarchy() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/info_training.bflyt");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bflyt/info_training.bflyt");
     let bytes = fs::read(path).expect("group hierarchy fixture should be readable");
     let bflyt: Bflyt = Cursor::new(bytes)
         .read_le()
@@ -231,7 +232,8 @@ fn group_boundaries_are_a_json_children_hierarchy() {
 
 #[test]
 fn parts_overrides_are_typed_in_json() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/info_training.bflyt");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bflyt/info_training.bflyt");
     let bytes = fs::read(path).expect("parts override fixture should be readable");
     let bflyt: Bflyt = Cursor::new(bytes)
         .read_le()
@@ -251,7 +253,8 @@ fn parts_overrides_are_typed_in_json() {
 
 #[test]
 fn window_metrics_and_flags_are_typed_in_json() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/info_training.bflyt");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bflyt/info_training.bflyt");
     let bytes = fs::read(path).expect("window fixture should be readable");
     let bflyt: Bflyt = Cursor::new(bytes)
         .read_le()
@@ -270,7 +273,8 @@ fn window_metrics_and_flags_are_typed_in_json() {
 
 #[test]
 fn textbox_metadata_is_typed_in_json() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/info_training.bflyt");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bflyt/info_training.bflyt");
     let bytes = fs::read(path).expect("textbox fixture should be readable");
     let bflyt: Bflyt = Cursor::new(bytes)
         .read_le()
@@ -289,7 +293,8 @@ fn textbox_metadata_is_typed_in_json() {
 
 #[test]
 fn smaller_scalar_fields_are_typed_in_json() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/info_training.bflyt");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bflyt/info_training.bflyt");
     let bytes = fs::read(path).expect("scalar fixture should be readable");
     let bflyt: Bflyt = Cursor::new(bytes)
         .read_le()
