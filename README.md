@@ -1,6 +1,8 @@
 # smush-ui
 
-`smush-ui` is a Rust library and command-line tool for reading, editing, and writing Nintendo BFLYT layout files as JSON. It targets the little-endian layouts used by Nintendo Switch games and provides a typed model for layout sections, pane hierarchies, materials, textures, text, windows, groups, and related metadata.
+`smush-ui` is a Rust library and command-line tool for Nintendo Switch UI files. It reads,
+edits, and writes BFLYT layouts as JSON and reads, writes, unpacks, repacks, and edits raw
+little-endian SARC archives stored with the `.arc` extension.
 
 The project makes layout data inspectable and editable without working directly with binary offsets and packed fields. JSON output represents pane and group nesting with `children` arrays, while the binary writer recreates the required boundary sections and derived file metadata.
 
@@ -12,7 +14,6 @@ Future goals include support for other file formats:
 - BFFNT (Fonts)
 - BFLIM (Layout Images)
 - BFLAN (Layout Animations)
-- SARC (Archives)
 
 ## What it supports
 
@@ -20,6 +21,8 @@ Future goals include support for other file formats:
 - JSON conversion through the `smush-ui` CLI.
 - Typed models for the BFLYT sections currently used by the included Switch layout fixtures.
 - Nested pane and group hierarchies in JSON.
+- Little-endian SARC version `0x0100` parsing and deterministic writing.
+- SARC directory unpacking and packing, plus insertion or replacement of individual entries.
 
 ## Installation
 
@@ -47,6 +50,35 @@ Convert edited JSON back to BFLYT:
 cargo run -- from-json input.json output.bflyt
 ```
 
+Unpack a raw SARC archive into a directory:
+
+```sh
+cargo run -- unpack-arc input.arc output-directory
+```
+
+Pack a directory tree into a raw SARC archive:
+
+```sh
+cargo run -- pack-arc input-directory output.arc
+```
+
+Add a file under a chosen archive path, leaving the input archive unchanged:
+
+```sh
+cargo run -- add-arc-file input.arc source-file timg/new-file.bin output.arc
+```
+
+Pass `--replace` to replace an existing entry with the same archive path. The input and output
+paths may be identical for this command; replacement is atomic.
+
+SARC entries are extracted and packed as raw files. The tool does not decode embedded BFLYT,
+BNTX, BFLAN, or other entry payloads during archive operations. Compressed wrappers such as
+zstd-compressed `.zs` files and Yaz0 are outside the current archive workflow; decompress them
+before using these commands.
+
+The deterministic writer aligns the data section and ordinary entry payloads to absolute `0x10`
+boundaries. Archives containing `.bntx` or `.bnsh` entries promote the data section and those GPU resource payloads to absolute `0x1000` boundaries.
+
 ## Library usage
 
 Use `Bflyt` with `binrw` to read or write binary layouts, and `serde_json` to edit their JSON representation:
@@ -72,11 +104,13 @@ std::fs::write("output.bflyt", output.into_inner())?;
 
 ## Validation
 
-The integration tests cover unit-level section serialization as well as binary-to-JSON-to-binary round trips for the checked-in BFLYT fixtures. A variety of extracted BFLYT files have been used for (de)serialization testing.
+The integration tests cover section serialization, BFLYT binary-to-JSON-to-binary round trips,
+and SARC parsing, deterministic writing, filesystem workflows, entry insertion, and CLI behavior.
+Extracted proprietary files are used only as ignored local validation inputs.
 
 ## References
 
-The following projects were used as references. There might be some overlap in functionalit.
+The following projects were used as references:
 
 - [Toolbox-Cli](https://github.com/crashbandicode/Toolbox-Cli)
 - [nnbfl](https://github.com/crackheadakira/nnbfl)
@@ -85,3 +119,4 @@ The following projects were used as references. There might be some overlap in f
 - [3DSkit](https://github.com/Tyulis/3DSkit)
 - [bflyt-rs](https://github.com/ultimate-research/bflyt-rs)
 - [Nintendo-UI-Studio](https://github.com/Arulo165/Nintendo-UI-Studio)
+- [ARCropolis](https://github.com/Raytwo/ARCropolis)

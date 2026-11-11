@@ -1,7 +1,16 @@
 use std::{fs, io::Cursor, path::Path};
 
 use binrw::{BinReaderExt, BinWriterExt};
-use smush_ui::bflyt::Bflyt;
+use smush_ui::bflyt::{
+    Bflyt, Section,
+    sections::{
+        Bounding, Group, GroupEnd, GroupStart, LineTransform, Pane, PaneEnd, PaneFlags, PaneInfo,
+        PaneOrigin, PaneStart, PaneUsageFlags, PartScalingFlags, Parts, PartsData,
+        PartsMaterialUsageFlags, PartsPaneBasicInfo, PartsProperty, TextAlignment,
+        TextHorizontalOrigin, TextOrigin, TextVerticalOrigin, Textbox, TextboxUsageFlags, Vec2,
+        Vec3, Window, WindowFrameMode,
+    },
+};
 
 #[rustfmt::skip]
 const BFLYT: &[u8] = &[
@@ -23,6 +32,44 @@ const BFLYT: &[u8] = &[
     0x43, 0x48, 0x00, 0x00, // Maximum parts width
     b'M', b'a', b'i', b'n', 0x00, // NUL-terminated layout name
 ];
+
+fn pane(name: &str) -> PaneInfo {
+    PaneInfo {
+        flags: PaneFlags::default(),
+        origin: PaneOrigin::default(),
+        alpha: 0xff,
+        part_scaling: PartScalingFlags::default(),
+        name: name.to_owned(),
+        user_name: String::new(),
+        position: Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        rotation: Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        scale: Vec2 { x: 1.0, y: 1.0 },
+        size: Vec2 { x: 100.0, y: 50.0 },
+    }
+}
+
+fn synthetic_bflyt(sections: Vec<Section>) -> Bflyt {
+    let mut fixture: Bflyt = Cursor::new(BFLYT)
+        .read_le()
+        .expect("base fixture should parse");
+    fixture.sections.extend(sections);
+
+    let mut output = Cursor::new(Vec::new());
+    output
+        .write_le(&fixture)
+        .expect("synthetic BFLYT should write");
+    Cursor::new(output.into_inner())
+        .read_le()
+        .expect("synthetic BFLYT should parse")
+}
 
 #[test]
 fn reads_a_bflyt_layout() {
@@ -175,12 +222,12 @@ fn every_real_bflyt_fixture_round_trips_through_json() {
 
 #[test]
 fn pane_boundaries_are_a_json_children_hierarchy() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/test_assets/bflyt/com_btn_arrow_00.bflyt");
-    let bytes = fs::read(path).expect("pane hierarchy fixture should be readable");
-    let bflyt: Bflyt = Cursor::new(bytes)
-        .read_le()
-        .expect("pane hierarchy fixture should parse");
+    let bflyt = synthetic_bflyt(vec![
+        Section::Pane(Pane::new(pane("parent"))),
+        Section::PaneStart(PaneStart::new()),
+        Section::Bounding(Bounding::new(pane("child"))),
+        Section::PaneEnd(PaneEnd::new()),
+    ]);
 
     let json = serde_json::to_string_pretty(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("PaneStart"));
@@ -203,12 +250,12 @@ fn pane_boundaries_are_a_json_children_hierarchy() {
 
 #[test]
 fn group_boundaries_are_a_json_children_hierarchy() {
-    let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bflyt/info_training.bflyt");
-    let bytes = fs::read(path).expect("group hierarchy fixture should be readable");
-    let bflyt: Bflyt = Cursor::new(bytes)
-        .read_le()
-        .expect("group hierarchy fixture should parse");
+    let bflyt = synthetic_bflyt(vec![
+        Section::Group(Group::new("RootGroup".to_owned(), Vec::new())),
+        Section::GroupStart(GroupStart::new()),
+        Section::Group(Group::new("ChildGroup".to_owned(), Vec::new())),
+        Section::GroupEnd(GroupEnd::new()),
+    ]);
 
     let json = serde_json::to_string_pretty(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("GroupStart"));
@@ -232,73 +279,127 @@ fn group_boundaries_are_a_json_children_hierarchy() {
 
 #[test]
 fn parts_overrides_are_typed_in_json() {
-    let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bflyt/info_training.bflyt");
-    let bytes = fs::read(path).expect("parts override fixture should be readable");
-    let bflyt: Bflyt = Cursor::new(bytes)
-        .read_le()
-        .expect("parts override fixture should parse");
+    let property = PartsProperty {
+        name: "target".to_owned(),
+        usage_flags: TextboxUsageFlags::default(),
+        basic_usage_flags: PaneUsageFlags::default(),
+        material_usage_flags: PartsMaterialUsageFlags::default(),
+        user_data_type: 0,
+        pane_override: Some(Box::new(Section::Bounding(Bounding::new(pane("override"))))),
+        user_data_override: None,
+        is_user_data_sentinel: false,
+        pane_basic_info: Some(PartsPaneBasicInfo::new(
+            "user".to_owned(),
+            Vec3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            },
+            Vec3 {
+                x: 4.0,
+                y: 5.0,
+                z: 6.0,
+            },
+            Vec2 { x: 2.0, y: 3.0 },
+            Vec2 { x: 4.0, y: 5.0 },
+            0x80,
+        )),
+    };
+    let bflyt = synthetic_bflyt(vec![Section::Parts(Parts::new(
+        pane("parts"),
+        Vec2 { x: 1.0, y: 1.0 },
+        vec![property],
+        PartsData {
+            part_name: "Part".to_owned(),
+        },
+    ))]);
 
     let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("referenced_data"));
     assert!(!json.contains("property_offset"));
     assert!(!json.contains("ext_user_data_offset"));
     assert!(!json.contains("pane_basic_info_offset"));
-    assert_eq!(json.matches("\"pane_override\"").count(), 44);
-    assert_eq!(json.matches("\"pane_basic_info\"").count(), 12);
+    assert_eq!(json.matches("\"pane_override\"").count(), 1);
+    assert_eq!(json.matches("\"pane_basic_info\"").count(), 1);
 
     let restored: Bflyt = serde_json::from_str(&json).expect("typed parts JSON should deserialize");
     assert_eq!(restored.sections.len(), bflyt.sections.len());
+    let property = &restored.sections[1].as_parts().unwrap().properties[0];
+    assert!(matches!(
+        property.pane_override.as_deref(),
+        Some(Section::Bounding(_))
+    ));
+    assert_eq!(property.pane_basic_info.as_ref().unwrap().alpha, 0x80);
 }
 
 #[test]
 fn window_metrics_and_flags_are_typed_in_json() {
-    let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bflyt/info_training.bflyt");
-    let bytes = fs::read(path).expect("window fixture should be readable");
-    let bflyt: Bflyt = Cursor::new(bytes)
-        .read_le()
-        .expect("window fixture should parse");
+    let mut window = Window::new(pane("window"));
+    window.content_expansion_left = -1;
+    window.frame_thickness_bottom = 8;
+    window
+        .flags
+        .set_frame_mode(WindowFrameMode::HorizontalFrameOnly);
+    let bflyt = synthetic_bflyt(vec![Section::Window(window)]);
 
     let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("\"rectangle\""));
-    assert_eq!(json.matches("\"content_expansion_left\"").count(), 5);
-    assert_eq!(json.matches("\"frame_thickness_bottom\"").count(), 5);
+    assert_eq!(json.matches("\"content_expansion_left\"").count(), 1);
+    assert_eq!(json.matches("\"frame_thickness_bottom\"").count(), 1);
     assert!(json.contains("\"frame_mode\":\"HorizontalFrameOnly\""));
 
     let restored: Bflyt =
         serde_json::from_str(&json).expect("typed window JSON should deserialize");
     assert_eq!(restored.sections.len(), bflyt.sections.len());
+    let window = restored.sections[1].as_window().unwrap();
+    assert_eq!(window.content_expansion_left, -1);
+    assert_eq!(window.frame_thickness_bottom, 8);
 }
 
 #[test]
 fn textbox_metadata_is_typed_in_json() {
-    let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bflyt/info_training.bflyt");
-    let bytes = fs::read(path).expect("textbox fixture should be readable");
-    let bflyt: Bflyt = Cursor::new(bytes)
-        .read_le()
-        .expect("textbox fixture should parse");
+    let mut textbox = Textbox::new(pane("textbox"));
+    textbox.origin = TextOrigin::new(TextVerticalOrigin::Center, TextHorizontalOrigin::Left);
+    textbox.line_alignment = TextAlignment::Synchronous;
+    textbox.flags.set_enable_line_transform(true);
+    textbox.data.text = "text".to_owned();
+    textbox.data.line_transforms = Some(vec![
+        LineTransform {
+            offset: 1.0,
+            width: 2.0,
+        },
+        LineTransform {
+            offset: 3.0,
+            width: 4.0,
+        },
+    ]);
+    let bflyt = synthetic_bflyt(vec![Section::Textbox(textbox)]);
 
     let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("\"active_shadows\""));
     assert!(json.contains("\"vertical\":\"Center\""));
     assert!(json.contains("\"line_alignment\":\"Synchronous\""));
-    assert_eq!(json.matches("\"line_transforms\"").count(), 57);
+    assert_eq!(json.matches("\"line_transforms\"").count(), 1);
 
     let restored: Bflyt =
         serde_json::from_str(&json).expect("typed textbox JSON should deserialize");
     assert_eq!(restored.sections.len(), bflyt.sections.len());
+    let textbox = restored.sections[1].as_textbox().unwrap();
+    assert_eq!(textbox.origin.vertical(), TextVerticalOrigin::Center);
+    assert_eq!(textbox.line_alignment, TextAlignment::Synchronous);
+    assert_eq!(textbox.data.line_transforms.as_ref().unwrap().len(), 2);
 }
 
 #[test]
 fn smaller_scalar_fields_are_typed_in_json() {
-    let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bflyt/info_training.bflyt");
-    let bytes = fs::read(path).expect("scalar fixture should be readable");
-    let bflyt: Bflyt = Cursor::new(bytes)
-        .read_le()
-        .expect("scalar fixture should parse");
+    let bflyt = synthetic_bflyt(vec![Section::Parts(Parts::new(
+        pane("parts"),
+        Vec2 { x: 1.0, y: 1.0 },
+        Vec::new(),
+        PartsData {
+            part_name: "Part".to_owned(),
+        },
+    ))]);
 
     let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("\"num_sections\""));
