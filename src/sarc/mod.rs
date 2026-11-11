@@ -1,8 +1,10 @@
 use binrw::{
-    BinRead, BinReaderExt, BinResult, BinWrite, BinWriterExt, Endian, Error as BinError,
-    NullString, binread, binrw, io::TakeSeekExt,
+    BinRead, BinResult, BinWrite, BinWriterExt, Endian, Error as BinError, NullString, binread,
+    binrw, io::TakeSeekExt,
 };
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+
+pub mod fs;
 
 const SARC_HEADER_SIZE: u64 = 0x14;
 const SFAT_HEADER_SIZE: u64 = 0x0c;
@@ -87,7 +89,7 @@ impl SarcArchive {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> BinResult<Self> {
-        Cursor::new(bytes).read_le()
+        Self::read_le(&mut Cursor::new(bytes))
     }
 
     pub fn to_bytes(&self) -> BinResult<Vec<u8>> {

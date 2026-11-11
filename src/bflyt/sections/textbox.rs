@@ -244,10 +244,12 @@ fn read_textbox_data<R: Read + Seek>(
             return String::new();
         };
         let units = bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| match endian {
-                Endian::Little => u16::from_le_bytes([pair[0], pair[1]]),
-                Endian::Big => u16::from_be_bytes([pair[0], pair[1]]),
+                Endian::Little => u16::from_le_bytes(*pair),
+                Endian::Big => u16::from_be_bytes(*pair),
             })
             .take_while(|unit| *unit != 0)
             .collect::<Vec<_>>();

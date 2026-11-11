@@ -13,7 +13,7 @@ fn marker_sections_are_an_eight_byte_header() {
     let bytes = output.into_inner();
 
     assert_eq!(bytes.len(), 32);
-    for header in bytes.chunks_exact(8) {
+    for header in bytes.as_chunks::<8>().0 {
         assert_eq!(u32::from_be_bytes(header[4..8].try_into().unwrap()), 8);
     }
 
