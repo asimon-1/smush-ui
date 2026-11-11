@@ -1,4 +1,4 @@
-use super::{SarcArchive, SarcEntry};
+use super::{MAX_ENTRIES, SarcArchive, SarcEntry};
 use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
@@ -9,6 +9,37 @@ use walkdir::WalkDir;
 struct ExtractEntry<'a> {
     relative_path: PathBuf,
     data: &'a [u8],
+}
+
+/// Inserts a named payload, optionally replacing an entry with the same path.
+pub fn insert_file(
+    archive: &mut SarcArchive,
+    name: impl Into<String>,
+    data: Vec<u8>,
+    replace: bool,
+) -> io::Result<()> {
+    let name = name.into();
+    archive_name_to_path(&name)?;
+
+    if let Some(position) = archive
+        .entries
+        .iter()
+        .position(|entry| entry.name.as_deref() == Some(name.as_str()))
+    {
+        if !replace {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("archive entry {name:?} already exists"),
+            ));
+        }
+        archive.entries[position] = SarcEntry::new(name, data);
+    } else {
+        if archive.entries.len() >= usize::from(MAX_ENTRIES) {
+            return Err(invalid_input("SARC entry count exceeds 0x3fff"));
+        }
+        archive.entries.push(SarcEntry::new(name, data));
+    }
+    Ok(())
 }
 
 pub fn unpack_to_directory(archive: &SarcArchive, destination: impl AsRef<Path>) -> io::Result<()> {

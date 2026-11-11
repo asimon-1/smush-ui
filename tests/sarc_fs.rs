@@ -1,6 +1,6 @@
 use smush_ui::sarc::{
     SarcArchive, SarcEntry,
-    fs::{pack_from_directory, unpack_to_directory},
+    fs::{insert_file, pack_from_directory, unpack_to_directory},
 };
 use std::{
     collections::BTreeMap,
@@ -173,6 +173,111 @@ fn rejects_symbolic_links_when_the_platform_allows_creating_one() {
     let output = workspace.path().join("output.arc");
     assert!(pack_from_directory(&input, &output).is_err());
     assert!(!output.exists());
+}
+
+#[test]
+fn inserts_nested_files_and_preserves_existing_entries() {
+    let workspace = TestDirectory::new("insert");
+    let mut archive = SarcArchive::new(vec![
+        SarcEntry::new("blyt/layout.bflyt", b"layout".to_vec()),
+        SarcEntry::new("anim/open.bflan", b"animation".to_vec()),
+    ]);
+
+    insert_file(
+        &mut archive,
+        "timg/nested/new.bin",
+        b"inserted".to_vec(),
+        false,
+    )
+    .unwrap();
+
+    let bytes = archive.to_bytes().unwrap();
+    let parsed = SarcArchive::from_bytes(&bytes).unwrap();
+    let entries = entry_map(&parsed);
+    assert_eq!(entries["anim/open.bflan"], b"animation");
+    assert_eq!(entries["blyt/layout.bflyt"], b"layout");
+    assert_eq!(entries["timg/nested/new.bin"], b"inserted");
+    assert_eq!(parsed.to_bytes().unwrap(), bytes);
+
+    let unpacked = workspace.path().join("unpacked");
+    let repacked = workspace.path().join("repacked.arc");
+    unpack_to_directory(&parsed, &unpacked).unwrap();
+    pack_from_directory(&unpacked, &repacked).unwrap();
+    assert_eq!(fs::read(repacked).unwrap(), bytes);
+}
+
+#[test]
+fn rejects_duplicates_and_replaces_only_the_matching_entry() {
+    let mut archive = SarcArchive::new(vec![
+        SarcEntry::new("existing", b"old".to_vec()),
+        SarcEntry::new("unrelated", b"keep".to_vec()),
+    ]);
+    let original = archive.clone();
+
+    let error = insert_file(&mut archive, "existing", b"new".to_vec(), false).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(archive, original);
+
+    insert_file(&mut archive, "existing", b"new".to_vec(), true).unwrap();
+    let entries = entry_map(&archive);
+    assert_eq!(entries["existing"], b"new");
+    assert_eq!(entries["unrelated"], b"keep");
+}
+
+#[test]
+fn rejects_unsafe_insertions_and_the_entry_limit() {
+    for name in ["", "/absolute", "../outside", "a\\b"] {
+        let mut archive = SarcArchive::new(Vec::new());
+        assert!(insert_file(&mut archive, name, Vec::new(), false).is_err());
+        assert!(archive.entries.is_empty());
+    }
+
+    let mut full = SarcArchive::new(vec![SarcEntry::hash_only(0, Vec::new()); 0x3fff]);
+    assert!(insert_file(&mut full, "new", Vec::new(), false).is_err());
+    assert_eq!(full.entries.len(), 0x3fff);
+}
+
+#[test]
+fn inserting_a_gpu_resource_promotes_data_alignment() {
+    let mut archive = SarcArchive::new(vec![SarcEntry::new("ordinary.bin", vec![1])]);
+    insert_file(&mut archive, "timg/texture.bntx", vec![2, 3, 4], false).unwrap();
+
+    let bytes = archive.to_bytes().unwrap();
+    let data_offset = read_u32(&bytes, 12);
+    let gpu_hash = archive
+        .entries
+        .iter()
+        .find(|entry| entry.name.as_deref() == Some("timg/texture.bntx"))
+        .unwrap()
+        .hash;
+    let gpu_offset = sfat_payload_offset(&bytes, gpu_hash);
+
+    assert_eq!(data_offset % 0x1000, 0);
+    assert_eq!(gpu_offset % 0x1000, 0);
+}
+
+fn entry_map(archive: &SarcArchive) -> BTreeMap<&str, &[u8]> {
+    archive
+        .entries
+        .iter()
+        .map(|entry| (entry.name.as_deref().unwrap(), entry.data.as_slice()))
+        .collect()
+}
+
+fn sfat_payload_offset(bytes: &[u8], hash: u32) -> u32 {
+    let data_offset = read_u32(bytes, 12);
+    let entry_count = u16::from_le_bytes(bytes[26..28].try_into().unwrap());
+    for index in 0..usize::from(entry_count) {
+        let record = 32 + index * 16;
+        if read_u32(bytes, record) == hash {
+            return data_offset + read_u32(bytes, record + 8);
+        }
+    }
+    panic!("missing SFAT record for hash {hash:#010x}");
+}
+
+fn read_u32(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
 }
 
 fn write_file(root: &Path, relative: &str, data: &[u8]) {
