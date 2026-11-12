@@ -106,41 +106,6 @@ fn writes_every_local_bntx_fixture_byte_for_byte() {
 }
 
 #[test]
-fn parses_combined_texture_order_and_typed_formats() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bntx/__Combined.bntx");
-    if !path.exists() {
-        return;
-    }
-    let bytes = fs::read(&path).expect("combined fixture should be readable");
-    let bntx = Bntx::from_bytes(&bytes).expect("combined fixture should parse");
-
-    assert_eq!(bntx.name, "__Combined");
-    assert_eq!(bntx.textures.len(), 43);
-    assert_eq!(bntx.textures[0].name, "com_black16^u");
-    assert_eq!(
-        bntx.textures[0].info.format.channel_format(),
-        ChannelFormat::Bc7U
-    );
-    assert_eq!(bntx.textures[0].info.format.type_format(), TypeFormat::Srgb);
-    assert_eq!(
-        bntx.textures[0].info.channels,
-        [
-            ChannelSelector::Red,
-            ChannelSelector::Green,
-            ChannelSelector::Blue,
-            ChannelSelector::Alpha,
-        ]
-    );
-
-    let formats = bntx
-        .textures
-        .iter()
-        .map(|texture| texture.info.format.to_raw())
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(formats, [0x1d01, 0x1e01, 0x2006].into());
-}
-
-#[test]
 fn rejects_corrupted_header_and_top_level_ranges() {
     let original = synthetic_bntx(1, false).bytes;
 

@@ -418,4 +418,12 @@ impl TextureLayout {
     pub fn block_height_exponent(self) -> u8 {
         self.block_height_log2().value()
     }
+
+    pub fn set_block_height_exponent(&mut self, exponent: u8) -> bool {
+        if exponent > 7 {
+            return false;
+        }
+        self.set_block_height_log2(u3::new(exponent));
+        true
+    }
 }
