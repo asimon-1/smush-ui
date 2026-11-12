@@ -80,6 +80,32 @@ fn parses_every_local_bntx_fixture() {
 }
 
 #[test]
+fn writes_every_local_bntx_fixture_byte_for_byte() {
+    for path in fixture_paths() {
+        let expected = fs::read(&path)
+            .unwrap_or_else(|error| panic!("{} should be readable: {error}", path.display()));
+        let bntx = Bntx::from_bytes(&expected)
+            .unwrap_or_else(|error| panic!("{} should parse: {error}", path.display()));
+        let actual = bntx
+            .to_bytes()
+            .unwrap_or_else(|error| panic!("{} should write: {error}", path.display()));
+        if actual != expected {
+            let mismatch = actual
+                .iter()
+                .zip(&expected)
+                .position(|(actual, expected)| actual != expected)
+                .unwrap_or(actual.len().min(expected.len()));
+            panic!(
+                "{} differs at {mismatch:#x}: wrote {} bytes, expected {} bytes",
+                path.display(),
+                actual.len(),
+                expected.len()
+            );
+        }
+    }
+}
+
+#[test]
 fn parses_combined_texture_order_and_typed_formats() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_assets/bntx/__Combined.bntx");
     if !path.exists() {
@@ -890,4 +916,207 @@ fn ignores_unmodeled_dictionary_and_relocation_contents() {
     let actual = Bntx::from_bytes(&fixture.bytes)
         .expect("unmodeled metadata should not affect decoded textures");
     assert_eq!(actual, expected);
+}
+
+fn assert_writer_fixed_point(label: &str, expected: &Bntx) {
+    let first_bytes = expected
+        .to_bytes()
+        .unwrap_or_else(|error| panic!("{label} should write: {error}"));
+    let actual = Bntx::from_bytes(&first_bytes)
+        .unwrap_or_else(|error| panic!("written {label} should parse: {error}"));
+    assert_eq!(&actual, expected, "{label} semantic round trip");
+    assert_eq!(
+        actual
+            .to_bytes()
+            .unwrap_or_else(|error| panic!("reparsed {label} should write: {error}")),
+        first_bytes,
+        "{label} writer fixed point"
+    );
+}
+
+#[test]
+fn writes_empty_single_multi_unknown_and_user_data_models_deterministically() {
+    let single = Bntx::from_bytes(&synthetic_bntx(1, true).bytes)
+        .expect("single synthetic fixture should parse");
+    let multi = Bntx::from_bytes(&synthetic_bntx(2, false).bytes)
+        .expect("multi synthetic fixture should parse");
+
+    let mut empty = single.clone();
+    empty.textures.clear();
+
+    let mut unknown_fixture = synthetic_bntx(1, true);
+    let texture = unknown_fixture.offsets.texture_blocks[0];
+    put_u32(&mut unknown_fixture.bytes, texture + 0x1c, 0xdead_beef);
+    unknown_fixture.bytes[texture + 0x58] = 0xff;
+    let unknown = Bntx::from_bytes(&unknown_fixture.bytes)
+        .expect("unknown-format synthetic fixture should parse");
+
+    assert_writer_fixed_point("empty container", &empty);
+    assert_writer_fixed_point("single texture with user data", &single);
+    assert_writer_fixed_point("multiple textures", &multi);
+    assert_writer_fixed_point("unknown format and channel", &unknown);
+
+    assert_eq!(single.to_bytes().unwrap(), single.to_bytes().unwrap());
+    assert_eq!(multi.to_bytes().unwrap(), multi.to_bytes().unwrap());
+}
+
+#[test]
+fn writes_compact_fixture_with_exact_layout_and_relocations() {
+    let model = Bntx::from_bytes(&synthetic_bntx(1, false).bytes)
+        .expect("compact synthetic fixture should parse");
+    let actual = model
+        .to_bytes()
+        .expect("compact synthetic model should write");
+    let mut expected = vec![0; 0x2088];
+
+    expected[0..8].copy_from_slice(b"BNTX\0\0\0\0");
+    put_u16(&mut expected, 0x0a, 4);
+    put_u16(&mut expected, 0x0c, 0xfeff);
+    expected[0x0e] = 12;
+    expected[0x0f] = 64;
+    put_u32(&mut expected, 0x10, 0x1ba);
+    put_u16(&mut expected, 0x16, 0x1a0);
+    put_u32(&mut expected, 0x18, 0x2000);
+    put_u32(&mut expected, 0x1c, 0x2088);
+
+    expected[0x20..0x24].copy_from_slice(b"NX  ");
+    put_u32(&mut expected, 0x24, 1);
+    put_u64(&mut expected, 0x28, 0x198);
+    put_u64(&mut expected, 0x30, 0xff0);
+    put_u64(&mut expected, 0x38, 0x1c8);
+    put_u64(&mut expected, 0x40, 0x58);
+    put_u64(&mut expected, 0x198, 0x1f0);
+
+    expected[0x1a0..0x1a4].copy_from_slice(b"_STR");
+    put_u32(&mut expected, 0x1a4, 0x50);
+    put_u32(&mut expected, 0x1a8, 0x50);
+    put_u32(&mut expected, 0x1b0, 2);
+    put_u16(&mut expected, 0x1b8, 9);
+    expected[0x1ba..0x1c3].copy_from_slice(b"synthetic");
+    put_u16(&mut expected, 0x1c4, 1);
+    expected[0x1c6] = b'a';
+
+    expected[0x1c8..0x1cc].copy_from_slice(b"_DIC");
+    put_u32(&mut expected, 0x1cc, 1);
+    put_u32(&mut expected, 0x1d0, u32::MAX);
+    put_u16(&mut expected, 0x1d4, 1);
+    put_u64(&mut expected, 0x1d8, 0x1b4);
+    put_u16(&mut expected, 0x1e6, 1);
+    put_u64(&mut expected, 0x1e8, 0x1c4);
+
+    expected[0x1f0..0x1f4].copy_from_slice(b"BRTI");
+    put_u32(&mut expected, 0x1f4, 0xe00);
+    put_u32(&mut expected, 0x1f8, 0xe00);
+    expected[0x200] = 7;
+    expected[0x201] = 2;
+    put_u16(&mut expected, 0x206, 2);
+    put_u32(&mut expected, 0x208, 1);
+    put_u32(&mut expected, 0x20c, 0x2001);
+    put_u32(&mut expected, 0x210, 0x20);
+    put_u32(&mut expected, 0x214, 4);
+    put_u32(&mut expected, 0x218, 8);
+    put_u32(&mut expected, 0x21c, 1);
+    put_u32(&mut expected, 0x220, 1);
+    put_u32(&mut expected, 0x224, 0xa5b6_c7d2);
+    put_u32(&mut expected, 0x228, 0x1234_0000);
+    expected[0x22c..0x240].copy_from_slice(&std::array::from_fn::<_, 20, _>(|i| i as u8));
+    put_u32(&mut expected, 0x240, 16);
+    put_u32(&mut expected, 0x244, 0x200);
+    expected[0x248..0x24c].copy_from_slice(&[2, 3, 4, 5]);
+    put_u32(&mut expected, 0x24c, 1);
+    put_u64(&mut expected, 0x250, 0x1c4);
+    put_u64(&mut expected, 0x258, 0x20);
+    put_u64(&mut expected, 0x260, 0x490);
+    put_u64(&mut expected, 0x270, 0x290);
+    put_u64(&mut expected, 0x278, 0x390);
+    put_u64(&mut expected, 0x490, 0x1000);
+    put_u64(&mut expected, 0x498, 0x1008);
+
+    expected[0xff0..0xff8].copy_from_slice(b"BRTD\0\0\0\0");
+    put_u64(&mut expected, 0xff8, 0x1010);
+    expected[0x1000..0x1010].copy_from_slice(&(0..16).collect::<Vec<_>>());
+
+    expected[0x2000..0x2004].copy_from_slice(b"_RLT");
+    put_u32(&mut expected, 0x2004, 0x2000);
+    put_u32(&mut expected, 0x2008, 2);
+    put_u32(&mut expected, 0x201c, 0x4a0);
+    put_u32(&mut expected, 0x2024, 7);
+    put_u32(&mut expected, 0x2030, 0xff0);
+    put_u32(&mut expected, 0x2034, 0x1010);
+    put_u32(&mut expected, 0x2038, 7);
+    put_u32(&mut expected, 0x203c, 2);
+    for (index, (offset, pointers)) in [
+        (0x28, 1),
+        (0x38, 2),
+        (0x198, 1),
+        (0x1d8, 1),
+        (0x1e8, 1),
+        (0x250, 3),
+        (0x270, 2),
+        (0x30, 1),
+        (0x490, 2),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let entry = 0x2040 + index * 8;
+        put_u32(&mut expected, entry, offset);
+        put_u16(&mut expected, entry + 4, 1);
+        expected[entry + 6] = pointers;
+    }
+
+    if actual != expected {
+        let mismatch = actual
+            .iter()
+            .zip(&expected)
+            .position(|(actual, expected)| actual != expected)
+            .unwrap_or(actual.len().min(expected.len()));
+        panic!(
+            "compact writer mismatch at {mismatch:#x}: actual={:?}, expected={:?}",
+            actual.get(mismatch),
+            expected.get(mismatch)
+        );
+    }
+}
+
+#[test]
+fn rejects_malformed_semantic_models_before_writing() {
+    let single = Bntx::from_bytes(&synthetic_bntx(1, true).bytes)
+        .expect("single synthetic fixture should parse");
+    let multi = Bntx::from_bytes(&synthetic_bntx(2, false).bytes)
+        .expect("multi synthetic fixture should parse");
+    let mut cases = Vec::new();
+
+    let mut unsupported_version = single.clone();
+    unsupported_version.version.major = 5;
+    cases.push(("unsupported version", unsupported_version));
+    let mut duplicate_names = multi;
+    duplicate_names.textures[1].name = duplicate_names.textures[0].name.clone();
+    cases.push(("duplicate texture names", duplicate_names));
+    let mut zero_width = single.clone();
+    zero_width.textures[0].info.width = 0;
+    cases.push(("zero width", zero_width));
+    let mut empty_mips = single.clone();
+    empty_mips.textures[0].mip_offsets.clear();
+    cases.push(("empty mip table", empty_mips));
+    let mut bad_mip = single.clone();
+    bad_mip.textures[0].mip_offsets[0] = 1;
+    cases.push(("nonzero first mip", bad_mip));
+    let mut empty_image = single.clone();
+    empty_image.textures[0].image_data.clear();
+    cases.push(("empty image", empty_image));
+    let mut bad_alignment = single.clone();
+    bad_alignment.textures[0].info.image_alignment = 3;
+    cases.push(("non-power-of-two alignment", bad_alignment));
+    let mut duplicate_user_data = single.clone();
+    duplicate_user_data.textures[0].user_data[1].name =
+        duplicate_user_data.textures[0].user_data[0].name.clone();
+    cases.push(("duplicate user-data names", duplicate_user_data));
+    let mut nul_name = single;
+    nul_name.textures[0].name.push('\0');
+    cases.push(("NUL in texture name", nul_name));
+
+    for (label, model) in cases {
+        assert!(model.to_bytes().is_err(), "{label} should fail to write");
+    }
 }

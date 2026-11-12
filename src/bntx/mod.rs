@@ -1,8 +1,12 @@
 mod binary;
+mod dictionary;
 pub mod format;
 mod input;
 mod model;
 mod parser;
+mod relocation;
+mod validation;
+mod writer;
 
 use binrw::{BinResult, Error as BinError};
 
@@ -13,9 +17,12 @@ pub use self::format::{
 pub use self::model::{Bntx, FloatValue, Texture, TextureInfo, UserData, UserDataValue, Version};
 
 impl Bntx {
-    /// Parses the verified little-endian version-4 `NX  ` BNTX profile.
     pub fn from_bytes(bytes: &[u8]) -> BinResult<Self> {
         parser::parse(bytes)
+    }
+
+    pub fn to_bytes(&self) -> BinResult<Vec<u8>> {
+        writer::write(self)
     }
 }
 

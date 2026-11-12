@@ -15,7 +15,7 @@ pub struct Version {
     pub micro: u8,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Bntx {
     pub version: Version,
     pub alignment_exponent: u8,
@@ -24,6 +24,20 @@ pub struct Bntx {
     pub name: String,
     pub platform: Platform,
     pub textures: Vec<Texture>,
+    #[serde(skip)]
+    pub(crate) source_string_order: Vec<String>,
+}
+
+impl PartialEq for Bntx {
+    fn eq(&self, other: &Self) -> bool {
+        self.version == other.version
+            && self.alignment_exponent == other.alignment_exponent
+            && self.target_address_size == other.target_address_size
+            && self.flag == other.flag
+            && self.name == other.name
+            && self.platform == other.platform
+            && self.textures == other.textures
+    }
 }
 
 /// One texture and its exact raw swizzled image payload.

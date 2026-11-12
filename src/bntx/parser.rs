@@ -27,8 +27,8 @@ pub(crate) fn parse(bytes: &[u8]) -> BinResult<Bntx> {
 
 struct StringPool {
     values: HashMap<u64, String>,
+    order: Vec<String>,
     block_end: u64,
-    next_block: u64,
 }
 
 impl StringPool {
@@ -55,7 +55,6 @@ struct ParsedImage {
 struct ParsedTexture {
     texture: Texture,
     block_offset: u64,
-    next_block: u64,
     payload_range: FileRange,
 }
 
@@ -83,11 +82,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse(self) -> BinResult<Bntx> {
-        self.validate_profile_header()?;
+        self.validate_file_layout()?;
         let nx: NxHeader =
             self.input
                 .read_at(FILE_HEADER_SIZE, NX_HEADER_SIZE, "BNTX NX header")?;
-        self.validate_nx_header(&nx)?;
+        self.validate_nx_pointers(&nx)?;
 
         let texture_count = usize::try_from(nx.texture_count)
             .map_err(|_| bntx_error(0x24, "BNTX texture count is too large"))?;
@@ -127,7 +126,7 @@ impl<'a> Parser<'a> {
             .first()
             .copied()
             .unwrap_or(nx.texture_data_block_offset);
-        if strings.next_block != expected_first_block || strings.block_end != expected_first_block {
+        if strings.block_end != expected_first_block {
             return Err(bntx_error(
                 u64::from(self.header.first_block_offset) + 4,
                 "BNTX string block does not lead to the first texture block",
@@ -169,61 +168,21 @@ impl<'a> Parser<'a> {
             .collect::<Vec<_>>();
         Ok(Bntx {
             version: Version {
-                major: self.header.major_version,
-                minor: self.header.minor_version,
-                micro: self.header.micro_version,
+                major: SUPPORTED_MAJOR_VERSION,
+                minor: SUPPORTED_MINOR_VERSION,
+                micro: SUPPORTED_MICRO_VERSION,
             },
-            alignment_exponent: self.header.alignment_exponent,
-            target_address_size: self.header.target_address_size,
-            flag: self.header.flag,
+            alignment_exponent: SUPPORTED_ALIGNMENT_EXPONENT,
+            target_address_size: SUPPORTED_ADDRESS_SIZE,
+            flag: 0,
             name,
             platform: Platform::Nx,
             textures,
+            source_string_order: strings.order,
         })
     }
 
-    fn validate_profile_header(&self) -> BinResult<()> {
-        let version = (
-            self.header.major_version,
-            self.header.minor_version,
-            self.header.micro_version,
-        );
-        if version
-            != (
-                SUPPORTED_MAJOR_VERSION,
-                SUPPORTED_MINOR_VERSION,
-                SUPPORTED_MICRO_VERSION,
-            )
-        {
-            return Err(bntx_error(
-                8,
-                format!(
-                    "unsupported BNTX version {}.{}.{}",
-                    version.0, version.1, version.2
-                ),
-            ));
-        }
-        if self.header.alignment_exponent != SUPPORTED_ALIGNMENT_EXPONENT {
-            return Err(bntx_error(
-                0x0e,
-                format!(
-                    "unsupported BNTX alignment exponent {}",
-                    self.header.alignment_exponent
-                ),
-            ));
-        }
-        if self.header.target_address_size != SUPPORTED_ADDRESS_SIZE {
-            return Err(bntx_error(
-                0x0f,
-                format!(
-                    "unsupported BNTX target address size {}",
-                    self.header.target_address_size
-                ),
-            ));
-        }
-        if self.header.flag != 0 {
-            return Err(bntx_error(0x14, "relocated BNTX files are not supported"));
-        }
+    fn validate_file_layout(&self) -> BinResult<()> {
         if u64::from(self.header.first_block_offset) < FILE_HEADER_SIZE + NX_HEADER_SIZE {
             return Err(bntx_error(0x16, "BNTX first block overlaps the NX header"));
         }
@@ -236,15 +195,8 @@ impl<'a> Parser<'a> {
         )
     }
 
-    fn validate_nx_header(&self, nx: &NxHeader) -> BinResult<()> {
-        if nx.memory_pool_offset != FILE_HEADER_SIZE + NX_HEADER_SIZE
-            || nx.current_memory_pool_pointer != 0
-            || nx.base_memory_pool_offset != 0
-            || nx.unknown != 0
-        {
-            return Err(bntx_error(0x40, "unsupported BNTX NX memory-pool profile"));
-        }
-        if nx.texture_info_array_offset < nx.memory_pool_offset + NX_MEMORY_POOL_SIZE
+    fn validate_nx_pointers(&self, nx: &NxHeader) -> BinResult<()> {
+        if nx.texture_info_array_offset < FILE_HEADER_SIZE + NX_HEADER_SIZE + NX_MEMORY_POOL_SIZE
             || nx.texture_dictionary_offset == 0
             || nx.texture_data_block_offset == 0
         {
@@ -257,12 +209,6 @@ impl<'a> Parser<'a> {
         let header: StringPoolHeader =
             self.input
                 .read_at(offset, BLOCK_HEADER_SIZE + 8, "BNTX string-pool header")?;
-        if header.next_block_offset == 0 || header.next_block_offset != header.block_size {
-            return Err(bntx_error(
-                offset + 4,
-                "BNTX string-pool block size and next offset disagree",
-            ));
-        }
         let block_end = offset
             .checked_add(u64::from(header.block_size))
             .ok_or_else(|| bntx_error(offset + 8, "BNTX string-pool size overflows"))?;
@@ -283,13 +229,15 @@ impl<'a> Parser<'a> {
         }
         let empty_string_offset = offset + 0x14;
         let mut values = HashMap::with_capacity(count.saturating_add(1));
+        let mut order = Vec::with_capacity(count);
         values.insert(empty_string_offset, String::new());
         let mut position = offset + 0x18;
         for _ in 0..count {
             let (value, consumed) = self.input.read_utf8_record(position, block_end)?;
-            if values.insert(position, value).is_some() {
+            if values.insert(position, value.clone()).is_some() {
                 return Err(bntx_error(position, "duplicate BNTX string offset"));
             }
+            order.push(value);
             position = position
                 .checked_add(consumed)
                 .ok_or_else(|| bntx_error(position, "BNTX string table overflows"))?;
@@ -317,8 +265,8 @@ impl<'a> Parser<'a> {
 
         Ok(StringPool {
             values,
+            order,
             block_end,
-            next_block: offset + u64::from(header.next_block_offset),
         })
     }
 
@@ -333,14 +281,7 @@ impl<'a> Parser<'a> {
         let block_end = offset
             .checked_add(u64::from(disk.block_size))
             .ok_or_else(|| bntx_error(offset + 8, "BNTX BRTI block size overflows"))?;
-        let next_block = offset
-            .checked_add(u64::from(disk.next_block_offset))
-            .ok_or_else(|| bntx_error(offset + 4, "BNTX BRTI next offset overflows"))?;
-        if disk.next_block_offset == 0
-            || disk.next_block_offset != disk.block_size
-            || next_block != expected_next
-            || block_end != expected_next
-        {
+        if block_end != expected_next {
             return Err(bntx_error(
                 offset + 4,
                 "BNTX BRTI block chain is inconsistent",
@@ -370,7 +311,6 @@ impl<'a> Parser<'a> {
                 image_data: image.data,
             },
             block_offset: offset,
-            next_block,
             payload_range: image.range,
         })
     }
@@ -412,12 +352,6 @@ impl<'a> Parser<'a> {
             return Err(bntx_error(
                 offset + 0x16,
                 "BNTX texture mip count must be nonzero",
-            ));
-        }
-        if disk.container_offset != FILE_HEADER_SIZE {
-            return Err(bntx_error(
-                offset + 0x68,
-                "BNTX texture container pointer does not point to the NX header",
             ));
         }
         for (pointer_position, pointer, label) in [
@@ -739,7 +673,7 @@ impl<'a> Parser<'a> {
                 "BNTX BRTD block does not end at the relocation table",
             ));
         }
-        let alignment = 1u64 << self.header.alignment_exponent;
+        let alignment = 1u64 << SUPPORTED_ALIGNMENT_EXPONENT;
         if !(offset + BLOCK_HEADER_SIZE).is_multiple_of(alignment) {
             return Err(bntx_error(
                 offset,
@@ -806,7 +740,6 @@ fn validate_payload_ranges(textures: &[ParsedTexture]) -> BinResult<()> {
                 texture.payload_range.start,
                 texture.payload_range.end,
                 texture.block_offset,
-                texture.next_block,
             )
         })
         .collect::<Vec<_>>();
