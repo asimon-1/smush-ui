@@ -58,6 +58,8 @@ struct ParsedTexture {
     payload_range: FileRange,
 }
 
+// Pointers modeled by the NX, BRTI, string, user-data, and mip records are
+// absolute file offsets. Block sizes and next-block fields are the exceptions.
 struct Parser<'a> {
     input: Input<'a>,
     header: FileHeader,
@@ -133,6 +135,8 @@ impl<'a> Parser<'a> {
             ));
         }
 
+        // The file header points to UTF-8 bytes, while the pool map keys each
+        // record at its u16 length prefix like all other string pointers.
         let file_name_offset = u64::from(self.header.name_offset)
             .checked_sub(2)
             .ok_or_else(|| bntx_error(0x10, "BNTX filename pointer is smaller than its prefix"))?;

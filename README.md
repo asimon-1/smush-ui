@@ -1,8 +1,9 @@
 # smush-ui
 
 `smush-ui` is a Rust library and command-line tool for Nintendo Switch UI files. It reads,
-edits, and writes BFLYT layouts as JSON and reads, writes, unpacks, repacks, and edits raw
-little-endian SARC archives stored with the `.arc` extension.
+edits, and writes BFLYT layouts as JSON; reads, writes, unpacks, repacks, and edits raw
+little-endian SARC archives; and provides lossless and PNG-backed workflows for version-4 NX
+BNTX texture containers.
 
 The project makes layout data inspectable and editable without working directly with binary offsets and packed fields. JSON output represents pane and group nesting with `children` arrays, while the binary writer recreates the required boundary sections and derived file metadata.
 
@@ -10,19 +11,22 @@ The project makes layout data inspectable and editable without working directly 
 
 Future goals include support for other file formats:
 
-- BNTX (Textures)
 - BFFNT (Fonts)
 - BFLIM (Layout Images)
 - BFLAN (Layout Animations)
 
 ## What it supports
 
-- BFLYT parsing and writing.
-- JSON conversion through the `smush-ui` CLI.
-- Typed models for the BFLYT sections currently used by the included Switch layout fixtures.
-- Nested pane and group hierarchies in JSON.
-- Little-endian SARC version `0x0100` parsing and deterministic writing.
-- SARC directory unpacking and packing, plus insertion or replacement of individual entries.
+- BFLYT
+  - Parsing and writing
+  - Serialization to and from JSON
+- BNTX
+  - Parsing and writing
+  - Lossless unpacking and repacking
+  - Texture insertion or replacement
+- SARC
+  - Unpacking and repacking
+  - Insertion or replacement of individual entries in an existing archive
 
 ## Installation
 
@@ -38,34 +42,59 @@ cargo test
 
 ## Command-line usage
 
+```text
+Usage: smush-ui.exe <COMMAND>
+
+Commands:
+  to-json           Deserialize a little-endian BFLYT file to pretty-printed JSON
+  from-json         Serialize JSON to a little-endian BFLYT file
+  unpack-arc        Extract the named files in a SARC archive
+  pack-arc          Pack a directory tree into a SARC archive
+  add-arc-file      Insert an opaque file into an existing SARC archive
+  unpack-bntx       Extract a BNTX container to a lossless editable bundle
+  pack-bntx         Rebuild a BNTX container from a lossless bundle
+  add-bntx-texture  Add or replace one PNG texture in a BNTX container
+  create-bntx       Create a new BNTX container from one directory of PNG files
+
+Options:
+  -h, --help  Print help
+```
+
+Run `smush-ui.exe <COMMAND> --help` for the arguments and options accepted by a particular
+command. The examples below use `cargo run --` to run an uninstalled development build.
+
+### BFLYT layouts
+
 Convert a BFLYT file to formatted JSON:
 
 ```sh
-cargo run -- to-json input.bflyt output.json
+cargo run -- to-json layout.bflyt layout.json
 ```
 
 Convert edited JSON back to BFLYT:
 
 ```sh
-cargo run -- from-json input.json output.bflyt
+cargo run -- from-json layout.json rebuilt-layout.bflyt
 ```
+
+### SARC archives
 
 Unpack a raw SARC archive into a directory:
 
 ```sh
-cargo run -- unpack-arc input.arc output-directory
+cargo run -- unpack-arc archive.arc archive-files
 ```
 
 Pack a directory tree into a raw SARC archive:
 
 ```sh
-cargo run -- pack-arc input-directory output.arc
+cargo run -- pack-arc archive-files rebuilt.arc
 ```
 
 Add a file under a chosen archive path, leaving the input archive unchanged:
 
 ```sh
-cargo run -- add-arc-file input.arc source-file timg/new-file.bin output.arc
+cargo run -- add-arc-file archive.arc asset.bin assets/asset.bin updated.arc
 ```
 
 Pass `--replace` to replace an existing entry with the same archive path. The input and output
@@ -78,6 +107,107 @@ before using these commands.
 
 The deterministic writer aligns the data section and ordinary entry payloads to absolute `0x10`
 boundaries. Archives containing `.bntx` or `.bnsh` entries promote the data section and those GPU resource payloads to absolute `0x1000` boundaries.
+
+### BNTX texture containers
+
+Unpack a BNTX into a self-contained editable bundle:
+
+```sh
+cargo run -- unpack-bntx textures.bntx texture-bundle
+```
+
+The bundle has this layout:
+
+```text
+texture-bundle/
+  bntx.json
+  textures/
+    0000-texture-a.bin
+    0000-texture-a.png
+    0001-texture-b.bin
+    0001-texture-b.png
+```
+
+`bntx.json` preserves the container and texture settings needed to rebuild the file. Each `.bin`
+is an exact copy of one texture's original image data, while each `.png` is a convenient view that
+can be opened and edited in ordinary image software.
+
+#### Why bundles contain both `.bin` and `.png` files
+
+BNTX textures use compressed, game-ready image data. Converting that data to PNG and back can
+change the compressed bytes and may slightly reduce image quality, even when the visible image was
+not intentionally changed. Some BNTX texture types also cannot be converted to PNG yet.
+
+Keeping the original `.bin` files solves both problems: unpacking and repacking is lossless by
+default, and unsupported texture types can still be preserved. The PNG files are optional editing
+copies rather than replacements for the originals.
+
+This affects normal usage as follows:
+
+- If you only want to inspect, archive, or losslessly repack a BNTX, use the default unpack and
+  pack commands. PNG edits are ignored during packing, so simply opening or accidentally changing
+  a preview cannot alter the game texture.
+- If you intentionally edited one or more PNGs, pack with `--from-png`. `smush-ui` remembers which
+  previews changed and re-encodes only those textures. Unchanged textures continue using their
+  original `.bin` data, avoiding unnecessary quality loss.
+- Use `--no-preview` when you only need a lossless bundle and do not need viewable images. This is
+  also useful if a file contains a texture profile that cannot be previewed.
+- The default previews show the channels as the game normally uses them. Try `--raw-channels` only
+  when a preview looks unusual or you know the texture stores separate kinds of data in its color
+  channels. The bundle remembers this choice when importing edited PNGs.
+
+Repack a bundle losslessly, or explicitly encode changed PNG previews:
+
+```sh
+cargo run -- pack-bntx texture-bundle rebuilt.bntx
+cargo run -- pack-bntx texture-bundle rebuilt.bntx --from-png
+```
+
+With `--from-png`, edited previews must keep their original dimensions. The tool rebuilds the
+texture's additional image levels automatically. It reports missing or invalid PNGs and unsupported
+texture types instead of silently discarding an edit. Re-encoding is lossy, so an edited texture
+will not normally have the same compressed bytes as its original `.bin` file.
+
+Before a PNG can be added, it needs a BNTX storage profile: how the image is compressed, how its
+color channels are used, and how many image levels it contains. Use `--like` to copy that profile
+from an existing texture. The new PNG still supplies the name, dimensions, and visible image:
+
+```sh
+cargo run -- add-bntx-texture textures.bntx image.png new_texture updated.bntx \
+  --like template_texture
+```
+
+This is useful when the new texture should behave like another texture already in the container.
+If no existing texture is a suitable model, select a compression format explicitly instead:
+
+```sh
+cargo run -- add-bntx-texture textures.bntx image.png new_texture updated.bntx \
+  --format bc7-srgb
+```
+
+New additions default to `bc7-unorm` when neither `--like` nor `--format` is supplied.
+
+Duplicate texture names are rejected unless `--replace` is present. Replacement without
+`--like` or `--format` preserves the existing texture's storage profile. The input and output
+paths may be identical for replacement.
+
+Create a new container from the regular PNG files directly inside one directory:
+
+```sh
+cargo run -- create-bntx images textures.bntx \
+  --name texture_container --format bc7-unorm
+```
+
+Files are processed in deterministic filename order and their exact UTF-8 stems become texture
+names. `--name` defaults to the output filename stem, and `--format` defaults to `bc7-unorm`.
+The accepted formats are `bc4-unorm`, `bc5-unorm`, `bc7-unorm`, and `bc7-srgb`.
+
+Packing, adding, replacing, and creating serialize completely before atomically replacing their
+destination. A failure leaves an existing destination unchanged. Unpacking preflights all paths
+and refuses symlinks, traversal, and existing-file conflicts before creating bundle files.
+
+PNG editing currently supports the listed formats for ordinary 2D NX textures. Other image formats
+and texture types can still be unpacked and repacked losslessly through their `.bin` files.
 
 ## Library usage
 
@@ -102,21 +232,20 @@ std::fs::write("output.bflyt", output.into_inner())?;
 
 `filesize` and the binary section count are derived when the layout is written. They are intentionally omitted from normal JSON output.
 
-## Validation
-
-The integration tests cover section serialization, BFLYT binary-to-JSON-to-binary round trips,
-and SARC parsing, deterministic writing, filesystem workflows, entry insertion, and CLI behavior.
-Extracted proprietary files are used only as ignored local validation inputs.
+For BNTX data, use `Bntx::from_bytes` and `Bntx::to_bytes` for the semantic model, or the
+functions in `smush_ui::bntx::fs` for the safe bundle and PNG workflows. Binary offsets,
+dictionaries, runtime scratch regions, and relocation records are derived by the writer rather
+than exposed as editable model fields.
 
 ## References
 
 The following projects were used as references:
 
-- [Toolbox-Cli](https://github.com/crashbandicode/Toolbox-Cli)
-- [nnbfl](https://github.com/crackheadakira/nnbfl)
-- [Nintendo-File-Formats](https://github.com/kinnay/Nintendo-File-Formats)
-- [Colony](https://github.com/KibbeWater/Colony)
 - [3DSkit](https://github.com/Tyulis/3DSkit)
 - [bflyt-rs](https://github.com/ultimate-research/bflyt-rs)
+- [Colony](https://github.com/KibbeWater/Colony)
+- [Nintendo-File-Formats](https://github.com/kinnay/Nintendo-File-Formats)
 - [Nintendo-UI-Studio](https://github.com/Arulo165/Nintendo-UI-Studio)
-- [ARCropolis](https://github.com/Raytwo/ARCropolis)
+- [nnbfl](https://github.com/crackheadakira/nnbfl)
+- [tomo](https://github.com/alexislours/tomo)
+- [Toolbox-Cli](https://github.com/crashbandicode/Toolbox-Cli)

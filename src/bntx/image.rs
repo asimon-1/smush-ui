@@ -6,6 +6,7 @@ use super::{
     },
     model::{Texture, TextureInfo},
     swizzle::SurfaceLayout,
+    zeroed_bytes,
 };
 use binrw::BinResult;
 use png::{BitDepth, ColorType, Decoder, Encoder, Transformations};
@@ -194,7 +195,7 @@ pub fn read_png(bytes: &[u8]) -> BinResult<RgbaImage> {
     let output_size = reader
         .output_buffer_size()
         .ok_or_else(|| bntx_error(0, "PNG dimensions exceed addressable memory"))?;
-    let mut output = vec![0; output_size];
+    let mut output = zeroed_bytes(output_size, "PNG decode buffer")?;
     let info = reader
         .next_frame(&mut output)
         .map_err(|error| bntx_error(0, format!("invalid PNG image data: {error}")))?;
@@ -244,6 +245,8 @@ fn encode_image(
     if channel_mode == ChannelMode::Resolved {
         unresolve_channels(&mut source, channels)?;
     }
+    // rusty_dds owns the temporary DDS container. This boundary accepts only
+    // its validated 2D mip surfaces and copies the exact BC block prefix out.
     let dds = std::panic::catch_unwind(|| {
         Dds::encode_from_rgba8(
             &source,
@@ -280,7 +283,7 @@ fn encode_image(
         }
         // rusty_dds sizes NPOT mip ranges by quartering the preceding DDS
         // range. The exact BC block payload is the prefix; the unused tail is
-        // container padding and must remain zero.
+        // DDS container padding and must remain zero.
         let (blocks, padding) = encoded.data.split_at(linear_size);
         if padding.iter().any(|&byte| byte != 0) {
             return Err(bntx_error(
@@ -393,15 +396,19 @@ fn select_channel(source: [u8; 4], selector: ChannelSelector) -> BinResult<u8> {
 }
 
 fn to_rgba(bytes: &[u8], color: ColorType) -> BinResult<Vec<u8>> {
-    let mut rgba = Vec::with_capacity(match color {
-        ColorType::Grayscale => bytes.len() * 4,
-        ColorType::GrayscaleAlpha => bytes.len() / 2 * 4,
-        ColorType::Rgb => bytes.len() / 3 * 4,
-        ColorType::Rgba => bytes.len(),
+    let capacity = match color {
+        ColorType::Grayscale => bytes.len().checked_mul(4),
+        ColorType::GrayscaleAlpha => (bytes.len() / 2).checked_mul(4),
+        ColorType::Rgb => (bytes.len() / 3).checked_mul(4),
+        ColorType::Rgba => Some(bytes.len()),
         ColorType::Indexed => {
             return Err(bntx_error(0, "PNG palette was not expanded by the decoder"));
         }
-    });
+    }
+    .ok_or_else(|| bntx_error(0, "PNG RGBA conversion size overflows"))?;
+    let mut rgba = Vec::new();
+    rgba.try_reserve_exact(capacity)
+        .map_err(|_| bntx_error(0, "PNG RGBA conversion is too large"))?;
     match color {
         ColorType::Grayscale => {
             for &value in bytes {

@@ -44,3 +44,12 @@ pub(crate) fn bntx_error(position: u64, message: impl Into<String>) -> BinError 
         message: message.into(),
     }
 }
+
+pub(crate) fn zeroed_bytes(size: usize, label: &str) -> BinResult<Vec<u8>> {
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(size)
+        .map_err(|_| bntx_error(0, format!("BNTX {label} is too large")))?;
+    bytes.resize(size, 0);
+    Ok(bytes)
+}

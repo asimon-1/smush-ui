@@ -184,6 +184,8 @@ fn finish_table(
         .map_err(|_| bntx_error(layout.relocation, "too many BNTX metadata relocations"))?;
     let data_count = u32::try_from(data_entries.len())
         .map_err(|_| bntx_error(layout.relocation, "too many BNTX data relocations"))?;
+    // _RLT groups pointers into metadata (headers, dictionaries, BRTI) and
+    // texture data (BRTD mip-pointer tables) sections with independent entries.
     let sections = [
         RelocationSectionDisk {
             file_offset: 0,

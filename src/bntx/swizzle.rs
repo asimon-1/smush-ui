@@ -1,6 +1,7 @@
 use super::{
     bntx_error,
     format::{ChannelFormat, ImageFormat, TypeFormat},
+    zeroed_bytes,
 };
 use binrw::BinResult;
 
@@ -124,7 +125,7 @@ impl SurfaceLayout {
                 ),
             ));
         }
-        let mut swizzled = zeroed(self.swizzled_size()?, "block-linear surface")?;
+        let mut swizzled = zeroed_bytes(self.swizzled_size()?, "block-linear surface")?;
         self.copy_blocks(linear, &mut swizzled, true)?;
         Ok(swizzled)
     }
@@ -141,7 +142,7 @@ impl SurfaceLayout {
                 ),
             ));
         }
-        let mut linear = zeroed(self.linear_size()?, "linear surface")?;
+        let mut linear = zeroed_bytes(self.linear_size()?, "linear surface")?;
         self.copy_blocks(swizzled, &mut linear, false)?;
         Ok(linear)
     }
@@ -177,6 +178,8 @@ impl SurfaceLayout {
     }
 
     fn block_linear_address(&self, x: u32, y: u32) -> BinResult<usize> {
+        // Tegra block-linear surfaces group compressed blocks into 64-byte by
+        // 8-row, 512-byte GOBs, then apply the documented intra-GOB permutation.
         let bytes_per_block = u128::from(self.bytes_per_block);
         let x_bytes = u128::from(x) * bytes_per_block;
         let y = u128::from(y);
@@ -196,7 +199,8 @@ impl SurfaceLayout {
     }
 }
 
-/// Chooses the smallest power-of-two GOB height that covers mip zero, capped at 16 GOBs.
+/// Chooses the smallest power-of-two GOB height covering mip zero, capped at the
+/// largest height observed in the supported NX profile (16 GOBs).
 pub fn derive_block_height_exponent(format: ImageFormat, width: u32, height: u32) -> BinResult<u8> {
     let layout = SurfaceLayout::new(format, width, height, 0)?;
     let required_gobs = layout.height_blocks().div_ceil(8);
@@ -221,13 +225,4 @@ fn bytes_per_block(format: ImageFormat) -> BinResult<u8> {
 
 fn usize_value(value: u128, label: &str) -> BinResult<usize> {
     usize::try_from(value).map_err(|_| bntx_error(0, format!("BNTX {label} overflows")))
-}
-
-fn zeroed(size: usize, label: &str) -> BinResult<Vec<u8>> {
-    let mut bytes = Vec::new();
-    bytes
-        .try_reserve_exact(size)
-        .map_err(|_| bntx_error(0, format!("BNTX {label} is too large")))?;
-    bytes.resize(size, 0);
-    Ok(bytes)
 }

@@ -8,12 +8,14 @@ use super::{
     bntx_error, dictionary,
     model::{Bntx, Texture, UserDataValue},
     relocation::{self, CanonicalLayout},
-    validation,
+    validation, zeroed_bytes,
 };
 use binrw::{BinResult, BinWrite, Endian, io::Cursor};
 use std::collections::{HashMap, HashSet};
 
 const POINTER_TABLE_OFFSET: u64 = FILE_HEADER_SIZE + NX_HEADER_SIZE + 0x140;
+// Each BRTI reserves two 0x100-byte regions for runtime texture and view
+// objects. Their pointers are relocated, but their bytes remain zero on disk.
 const RUNTIME_SCRATCH_SIZE: u64 = 0x100;
 const TEXTURE_RUNTIME_OFFSET: u64 = BRTI_SIZE;
 const TEXTURE_VIEW_OFFSET: u64 = TEXTURE_RUNTIME_OFFSET + RUNTIME_SCRATCH_SIZE;
@@ -446,6 +448,8 @@ impl Layout {
         output.write_at(
             0,
             &FileHeader {
+                // Unlike other string pointers, the file header points past
+                // the u16 length prefix to the container-name UTF-8 bytes.
                 name_offset: (name_record + 2) as u32,
                 first_block_offset: u16::try_from(self.strings.block_offset).map_err(|_| {
                     bntx_error(
@@ -546,7 +550,7 @@ impl Output {
         let size = usize::try_from(size)
             .map_err(|_| bntx_error(0, "BNTX output size exceeds addressable memory"))?;
         Ok(Self {
-            bytes: vec![0; size],
+            bytes: zeroed_bytes(size, "output")?,
         })
     }
 

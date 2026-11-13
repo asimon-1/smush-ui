@@ -107,6 +107,8 @@ fn branch(node: &DictionaryNodeDisk, key: &[u8]) -> u16 {
 }
 
 fn key_bit(key: &[u8], bit: u32) -> u8 {
+    // BNTX Patricia references count least-significant bits from the end of
+    // the UTF-8 byte string, rather than reading bytes in display order.
     let byte_index = (bit / 8) as usize;
     if byte_index >= key.len() {
         0
