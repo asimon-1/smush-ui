@@ -10,6 +10,14 @@ use binrw::{BinReaderExt, BinWriterExt};
 use clap::{Parser, Subcommand};
 use smush_ui::{
     bflyt::Bflyt,
+    bntx::{
+        Bntx, ChannelMode,
+        fs::{
+            PackOptions as BntxPackOptions, UnpackOptions as BntxUnpackOptions,
+            pack_from_directory as pack_bntx_directory,
+            unpack_to_directory as unpack_bntx_directory,
+        },
+    },
     sarc::{
         SarcArchive,
         fs::{insert_file, pack_from_directory, unpack_to_directory},
@@ -48,6 +56,25 @@ enum Command {
         /// Replace an existing entry with the same archive path.
         #[arg(long)]
         replace: bool,
+    },
+    /// Extract a BNTX container to a lossless editable bundle.
+    UnpackBntx {
+        input: PathBuf,
+        output_directory: PathBuf,
+        /// Do not create editable PNG previews.
+        #[arg(long)]
+        no_preview: bool,
+        /// Expose stored channels instead of applying texture channel selectors.
+        #[arg(long)]
+        raw_channels: bool,
+    },
+    /// Rebuild a BNTX container from a lossless bundle.
+    PackBntx {
+        input_directory: PathBuf,
+        output: PathBuf,
+        /// Re-encode changed PNG previews instead of using their lossless raw sidecars.
+        #[arg(long)]
+        from_png: bool,
     },
 }
 
@@ -132,6 +159,37 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             output_file
                 .commit()
                 .map_err(|error| path_error("replace SARC output", &output, error))?;
+        }
+        Command::UnpackBntx {
+            input,
+            output_directory,
+            no_preview,
+            raw_channels,
+        } => {
+            let bytes =
+                fs::read(&input).map_err(|error| path_error("read BNTX input", &input, error))?;
+            let bntx = Bntx::from_bytes(&bytes)
+                .map_err(|error| path_error("parse BNTX input", &input, error))?;
+            let options = BntxUnpackOptions {
+                write_previews: !no_preview,
+                channel_mode: if raw_channels {
+                    ChannelMode::Raw
+                } else {
+                    ChannelMode::Resolved
+                },
+            };
+            unpack_bntx_directory(&bntx, &output_directory, options).map_err(|error| {
+                paths_error("unpack BNTX bundle", &input, &output_directory, error)
+            })?;
+        }
+        Command::PackBntx {
+            input_directory,
+            output,
+            from_png,
+        } => {
+            pack_bntx_directory(&input_directory, &output, BntxPackOptions { from_png }).map_err(
+                |error| paths_error("pack BNTX bundle", &input_directory, &output, error),
+            )?;
         }
     }
 

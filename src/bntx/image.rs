@@ -13,13 +13,19 @@ use rusty_dds::{
     AlphaMode, D3D10ResourceDimension, Dds, DecodeContent, DxgiFormat, EncodeLayout, NewDxgiParams,
     SubresourceId,
 };
+use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 
 /// Whether decoded pixels expose stored channels or apply the BRTI channel selectors.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ChannelMode {
     Raw,
     Resolved,
+}
+
+/// Whether the in-process codec supports this BNTX image format.
+pub fn supports_image_format(format: ImageFormat) -> bool {
+    codec_format(format).is_ok()
 }
 
 /// A tightly packed, row-major RGBA8 image.
@@ -292,7 +298,7 @@ fn encode_image(
     })
 }
 
-fn validate_texture_profile(info: &TextureInfo) -> BinResult<()> {
+pub(crate) fn validate_texture_profile(info: &TextureInfo) -> BinResult<()> {
     if info.image_dimension != TextureDimension::TwoD
         || info.surface_dimension != SurfaceDimension::TwoD
         || info.tile_mode != TileMode::BlockLinear
