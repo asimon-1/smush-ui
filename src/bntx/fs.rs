@@ -1,5 +1,6 @@
 use super::{
-    Bntx, ChannelMode, Texture, TextureInfo, UserData, Version, decode_texture, encode_texture,
+    AddTextureOptions, Bntx, ChannelMode, NewTextureFormat, Texture, TextureInfo, UserData,
+    Version, add_texture, create_bntx, decode_texture, encode_texture,
     image::validate_texture_profile, read_png, supports_image_format, validation, write_png,
 };
 use atomic_write_file::AtomicWriteFile;
@@ -225,6 +226,75 @@ pub fn pack_from_directory(
 ) -> io::Result<()> {
     let output = output.as_ref();
     let bntx = read_bundle(directory, options)?;
+    write_bntx_atomic(&bntx, output)
+}
+
+/// Adds or replaces one PNG texture and atomically writes the resulting BNTX.
+pub fn add_texture_to_file(
+    input: impl AsRef<Path>,
+    source_png: impl AsRef<Path>,
+    texture_name: impl Into<String>,
+    output: impl AsRef<Path>,
+    options: AddTextureOptions,
+) -> io::Result<()> {
+    let input = input.as_ref();
+    let source_png = source_png.as_ref();
+    let output = output.as_ref();
+    let bytes = fs::read(input).map_err(|error| path_error("read BNTX input", input, error))?;
+    let mut bntx = Bntx::from_bytes(&bytes).map_err(|error| {
+        invalid_data(format!(
+            "failed to parse BNTX input {}: {error}",
+            input.display()
+        ))
+    })?;
+    let png = read_regular_file(source_png, "source PNG")?;
+    let image = read_png(&png).map_err(|error| {
+        invalid_data(format!(
+            "invalid source PNG {}: {error}",
+            source_png.display()
+        ))
+    })?;
+    add_texture(&mut bntx, texture_name, &image, options)
+        .map_err(|error| invalid_data(format!("failed to add BNTX texture: {error}")))?;
+    write_bntx_atomic(&bntx, output)
+}
+
+/// Creates a canonical BNTX from the PNG files directly inside a directory.
+pub fn create_from_png_directory(
+    input_directory: impl AsRef<Path>,
+    output: impl AsRef<Path>,
+    name: Option<&str>,
+    format: NewTextureFormat,
+) -> io::Result<()> {
+    let input_directory = input_directory.as_ref();
+    let output = output.as_ref();
+    let images = read_png_directory(input_directory)?;
+    if images.is_empty() {
+        return Err(invalid_input(format!(
+            "PNG input directory {} contains no PNG files",
+            input_directory.display()
+        )));
+    }
+    let name = match name {
+        Some(name) => name.to_owned(),
+        None => output
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                invalid_input(format!(
+                    "BNTX output {} has no valid UTF-8 file stem for the container name",
+                    output.display()
+                ))
+            })?
+            .to_owned(),
+    };
+    let bntx = create_bntx(name, images, format)
+        .map_err(|error| invalid_data(format!("failed to create BNTX: {error}")))?;
+    write_bntx_atomic(&bntx, output)
+}
+
+fn write_bntx_atomic(bntx: &Bntx, output: &Path) -> io::Result<()> {
     let bytes = bntx
         .to_bytes()
         .map_err(|error| invalid_data(format!("failed to serialize BNTX: {error}")))?;
@@ -235,6 +305,90 @@ pub fn pack_from_directory(
         .map_err(|error| path_error("write atomic BNTX output", output, error))?;
     file.commit()
         .map_err(|error| path_error("replace BNTX output", output, error))
+}
+
+fn read_png_directory(directory: &Path) -> io::Result<Vec<(String, super::RgbaImage)>> {
+    let metadata = fs::symlink_metadata(directory)
+        .map_err(|error| path_error("inspect PNG input directory", directory, error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(invalid_input(format!(
+            "PNG input {} must be a regular directory, not a symbolic link",
+            directory.display()
+        )));
+    }
+
+    let entries = fs::read_dir(directory)
+        .map_err(|error| path_error("read PNG input directory", directory, error))?;
+    let mut pngs = Vec::new();
+    for entry in entries {
+        let entry = entry
+            .map_err(|error| path_error("read PNG input directory entry", directory, error))?;
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|error| path_error("inspect PNG input entry", &path, error))?;
+        if file_type.is_symlink() {
+            return Err(invalid_input(format!(
+                "symbolic links are not allowed in PNG input directories: {}",
+                path.display()
+            )));
+        }
+        if file_type.is_dir() {
+            continue;
+        }
+        if !file_type.is_file() {
+            return Err(invalid_input(format!(
+                "PNG input entry {} is not a regular file",
+                path.display()
+            )));
+        }
+        let file_name = entry.file_name();
+        let file_path = Path::new(&file_name);
+        if !file_path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("png"))
+        {
+            continue;
+        }
+        let file_name = file_name.into_string().map_err(|_| {
+            invalid_input(format!(
+                "PNG input entry {} is not valid UTF-8",
+                path.display()
+            ))
+        })?;
+        let file_path = Path::new(&file_name);
+        let stem = file_path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                invalid_input(format!(
+                    "PNG input {} has no valid file stem",
+                    path.display()
+                ))
+            })?
+            .to_owned();
+        pngs.push((file_name, stem, path));
+    }
+    pngs.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut names = HashSet::with_capacity(pngs.len());
+    let mut images = Vec::with_capacity(pngs.len());
+    for (_, name, path) in pngs {
+        if !names.insert(name.clone()) {
+            return Err(invalid_input(format!(
+                "duplicate PNG texture name {name:?} in {}",
+                directory.display()
+            )));
+        }
+        let bytes = read_regular_file(&path, "PNG input")?;
+        let image = read_png(&bytes).map_err(|error| {
+            invalid_data(format!("invalid PNG input {}: {error}", path.display()))
+        })?;
+        images.push((name, image));
+    }
+    Ok(images)
 }
 
 impl BundleManifest {

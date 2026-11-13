@@ -65,6 +65,21 @@ pub fn channels_for(format: u32) -> [ChannelSelector; 4] {
     }
 }
 
+pub fn test_image(width: u32, height: u32, seed: u8) -> RgbaImage {
+    let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
+    for y in 0..height {
+        for x in 0..width {
+            pixels.extend_from_slice(&[
+                ((x * 17 + y * 29 + u32::from(seed) * 11) % 256) as u8,
+                ((x * 31 + y * 7 + u32::from(seed) * 23) % 256) as u8,
+                ((x * 5 + y * 43 + u32::from(seed) * 37) % 256) as u8,
+                ((x * 13 + y * 19 + u32::from(seed) * 41) % 256) as u8,
+            ]);
+        }
+    }
+    RgbaImage::new(width, height, pixels).unwrap()
+}
+
 fn encoded_texture(format: u32, width: u32, height: u32, name: &str, seed: u8) -> Texture {
     let format = ImageFormat::from_raw(format);
     let channels = channels_for(format.to_raw());
@@ -106,20 +121,15 @@ fn encoded_texture(format: u32, width: u32, height: u32, name: &str, seed: u8) -
 }
 
 fn patterned_image(format: u32, width: u32, height: u32, seed: u8) -> RgbaImage {
-    let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
-    for y in 0..height {
-        for x in 0..width {
-            let red = ((x * 17 + y * 29 + u32::from(seed) * 11) % 256) as u8;
-            let green = ((x * 31 + y * 7 + u32::from(seed) * 23) % 256) as u8;
-            let blue = ((x * 5 + y * 43 + u32::from(seed) * 37) % 256) as u8;
-            let alpha = ((x * 13 + y * 19 + u32::from(seed) * 41) % 256) as u8;
-            match format {
-                BC4_UNORM => pixels.extend_from_slice(&[255, 255, 255, alpha]),
-                BC5_UNORM => pixels.extend_from_slice(&[red, red, red, green]),
-                BC7_UNORM | BC7_SRGB => pixels.extend_from_slice(&[red, green, blue, alpha]),
-                _ => unreachable!(),
-            }
+    let mut image = test_image(width, height, seed);
+    for pixel in image.pixels.chunks_exact_mut(4) {
+        let [red, green, blue, alpha] = [pixel[0], pixel[1], pixel[2], pixel[3]];
+        match format {
+            BC4_UNORM => pixel.copy_from_slice(&[255, 255, 255, alpha]),
+            BC5_UNORM => pixel.copy_from_slice(&[red, red, red, green]),
+            BC7_UNORM | BC7_SRGB => pixel.copy_from_slice(&[red, green, blue, alpha]),
+            _ => unreachable!(),
         }
     }
-    RgbaImage::new(width, height, pixels).unwrap()
+    image
 }

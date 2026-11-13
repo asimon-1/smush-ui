@@ -7,13 +7,15 @@ use std::{
 
 use atomic_write_file::AtomicWriteFile;
 use binrw::{BinReaderExt, BinWriterExt};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use smush_ui::{
     bflyt::Bflyt,
     bntx::{
-        Bntx, ChannelMode,
+        AddTextureOptions, Bntx, ChannelMode, NewTextureFormat, TextureProfile,
         fs::{
             PackOptions as BntxPackOptions, UnpackOptions as BntxUnpackOptions,
+            add_texture_to_file as add_bntx_texture,
+            create_from_png_directory as create_bntx_directory,
             pack_from_directory as pack_bntx_directory,
             unpack_to_directory as unpack_bntx_directory,
         },
@@ -76,6 +78,52 @@ enum Command {
         #[arg(long)]
         from_png: bool,
     },
+    /// Add or replace one PNG texture in a BNTX container.
+    AddBntxTexture {
+        input: PathBuf,
+        source_png: PathBuf,
+        texture_name: String,
+        output: PathBuf,
+        /// Copy the texture profile and mip count from an existing texture.
+        #[arg(long, conflicts_with = "format")]
+        like: Option<String>,
+        /// Use an explicit format; new textures default to BC7 UNORM.
+        #[arg(long, value_enum, conflicts_with = "like")]
+        format: Option<BntxTextureFormat>,
+        /// Replace an existing texture with the requested name.
+        #[arg(long)]
+        replace: bool,
+    },
+    /// Create a new BNTX container from one directory of PNG files.
+    CreateBntx {
+        input_png_directory: PathBuf,
+        output: PathBuf,
+        /// Override the container name derived from the output filename.
+        #[arg(long)]
+        name: Option<String>,
+        /// Texture format used for every input PNG.
+        #[arg(long, value_enum, default_value = "bc7-unorm")]
+        format: BntxTextureFormat,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum BntxTextureFormat {
+    Bc4Unorm,
+    Bc5Unorm,
+    Bc7Unorm,
+    Bc7Srgb,
+}
+
+impl From<BntxTextureFormat> for NewTextureFormat {
+    fn from(value: BntxTextureFormat) -> Self {
+        match value {
+            BntxTextureFormat::Bc4Unorm => Self::Bc4Unorm,
+            BntxTextureFormat::Bc5Unorm => Self::Bc5Unorm,
+            BntxTextureFormat::Bc7Unorm => Self::Bc7Unorm,
+            BntxTextureFormat::Bc7Srgb => Self::Bc7Srgb,
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -190,6 +238,41 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             pack_bntx_directory(&input_directory, &output, BntxPackOptions { from_png }).map_err(
                 |error| paths_error("pack BNTX bundle", &input_directory, &output, error),
             )?;
+        }
+        Command::AddBntxTexture {
+            input,
+            source_png,
+            texture_name,
+            output,
+            like,
+            format,
+            replace,
+        } => {
+            let profile = like
+                .map(TextureProfile::Like)
+                .or_else(|| format.map(|format| TextureProfile::Format(format.into())));
+            add_bntx_texture(
+                &input,
+                &source_png,
+                texture_name,
+                &output,
+                AddTextureOptions { profile, replace },
+            )
+            .map_err(|error| paths_error("add BNTX texture", &input, &output, error))?;
+        }
+        Command::CreateBntx {
+            input_png_directory,
+            output,
+            name,
+            format,
+        } => {
+            create_bntx_directory(
+                &input_png_directory,
+                &output,
+                name.as_deref(),
+                format.into(),
+            )
+            .map_err(|error| paths_error("create BNTX", &input_png_directory, &output, error))?;
         }
     }
 

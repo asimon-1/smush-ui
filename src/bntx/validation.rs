@@ -21,12 +21,10 @@ pub(crate) fn validate(bntx: &Bntx) -> BinResult<()> {
         return Err(bntx_error(0, "unsupported BNTX writer profile"));
     }
     validate_name(&bntx.name, "container name", true)?;
-    if bntx.textures.len() > usize::from(u16::MAX) {
-        return Err(bntx_error(0, "BNTX texture count exceeds 65535"));
-    }
+    validate_texture_count(bntx.textures.len())?;
     let mut texture_names = HashSet::with_capacity(bntx.textures.len());
     for texture in &bntx.textures {
-        validate_name(&texture.name, "texture name", false)?;
+        validate_texture_name(&texture.name)?;
         if !texture_names.insert(texture.name.as_str()) {
             return Err(bntx_error(
                 0,
@@ -38,7 +36,18 @@ pub(crate) fn validate(bntx: &Bntx) -> BinResult<()> {
     Ok(())
 }
 
-fn validate_texture(texture: &Texture) -> BinResult<()> {
+pub(crate) fn validate_texture_name(name: &str) -> BinResult<()> {
+    validate_name(name, "texture name", false)
+}
+
+pub(crate) fn validate_texture_count(count: usize) -> BinResult<()> {
+    if count > usize::from(u16::MAX) {
+        return Err(bntx_error(0, "BNTX texture count exceeds 65535"));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_texture(texture: &Texture) -> BinResult<()> {
     let info = &texture.info;
     if info.image_dimension != TextureDimension::TwoD
         || info.tile_mode != TileMode::BlockLinear

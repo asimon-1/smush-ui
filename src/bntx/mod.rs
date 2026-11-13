@@ -1,4 +1,5 @@
 mod binary;
+mod creation;
 mod dictionary;
 pub mod format;
 pub mod fs;
@@ -13,6 +14,9 @@ mod writer;
 
 use binrw::{BinResult, Error as BinError};
 
+pub use self::creation::{
+    AddTextureOptions, NewTextureFormat, TextureProfile, add_texture, create_bntx,
+};
 pub use self::format::{
     ChannelFormat, ChannelSelector, ImageFormat, Platform, SurfaceDimension, TextureDimension,
     TextureLayout, TileMode, TypeFormat,
