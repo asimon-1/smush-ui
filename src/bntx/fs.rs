@@ -111,7 +111,7 @@ pub fn unpack_to_directory(
         }
     }
 
-    let mut manifest_bytes = serde_json::to_vec_pretty(&manifest)
+    let mut manifest_bytes = serde_jsonc2::to_vec_pretty(&manifest)
         .map_err(|error| invalid_data(format!("failed to serialize BNTX manifest: {error}")))?;
     manifest_bytes.push(b'\n');
     outputs.push(OutputFile {
@@ -149,7 +149,7 @@ pub fn read_bundle(directory: impl AsRef<Path>, options: PackOptions) -> io::Res
     validate_bundle_root(directory)?;
     let manifest_path = directory.join(MANIFEST_NAME);
     let manifest_bytes = read_regular_file(&manifest_path, "manifest")?;
-    let manifest: BundleManifest = serde_json::from_slice(&manifest_bytes)
+    let manifest: BundleManifest = serde_jsonc2::from_slice(&manifest_bytes)
         .map_err(|error| invalid_data(format!("invalid BNTX manifest: {error}")))?;
     let paths = manifest.validate()?;
 

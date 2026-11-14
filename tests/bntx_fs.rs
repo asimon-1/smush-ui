@@ -525,13 +525,13 @@ fn assert_generated_layout(bytes: &[u8], texture_count: usize) {
 }
 
 fn read_manifest(bundle: &Path) -> BundleManifest {
-    serde_json::from_slice(&fs::read(bundle.join("bntx.json")).unwrap()).unwrap()
+    serde_jsonc2::from_slice(&fs::read(bundle.join("bntx.json")).unwrap()).unwrap()
 }
 
 fn write_manifest(bundle: &Path, manifest: &BundleManifest) {
     fs::write(
         bundle.join("bntx.json"),
-        serde_json::to_vec_pretty(manifest).unwrap(),
+        serde_jsonc2::to_vec_pretty(manifest).unwrap(),
     )
     .unwrap();
 }

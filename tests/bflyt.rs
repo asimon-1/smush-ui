@@ -120,11 +120,12 @@ fn serializes_to_json_and_back() {
     let mut input = Cursor::new(BFLYT);
     let bflyt: Bflyt = input.read_le().expect("fixture should parse");
 
-    let json = serde_json::to_string_pretty(&bflyt).expect("layout should serialize to JSON");
+    let json = serde_jsonc2::to_string_pretty(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("\"filesize\""));
     assert!(!json.contains("\"num_sections\""));
     assert!(json.contains("\"is_drawn_from_middle\": true"));
-    let restored: Bflyt = serde_json::from_str(&json).expect("JSON should deserialize to a layout");
+    let restored: Bflyt =
+        serde_jsonc2::from_str(&json).expect("JSON should deserialize to a layout");
     let mut output = Cursor::new(Vec::new());
 
     output
@@ -136,9 +137,9 @@ fn serializes_to_json_and_back() {
 #[test]
 fn derives_filesize_after_json_changes_section_size() {
     let bflyt: Bflyt = Cursor::new(BFLYT).read_le().expect("fixture should parse");
-    let mut json = serde_json::to_value(&bflyt).expect("layout should serialize to JSON");
+    let mut json = serde_jsonc2::to_value(&bflyt).expect("layout should serialize to JSON");
     json["sections"][0]["Layout"]["name"] = "A longer layout name".into();
-    let restored: Bflyt = serde_json::from_value(json).expect("edited JSON should deserialize");
+    let restored: Bflyt = serde_jsonc2::from_value(json).expect("edited JSON should deserialize");
     assert_eq!(restored.filesize, 0);
 
     let mut output = Cursor::new(Vec::new());
@@ -198,9 +199,9 @@ fn every_real_bflyt_fixture_round_trips_through_json() {
             path.display()
         );
 
-        let json = serde_json::to_vec(&bflyt)
+        let json = serde_jsonc2::to_vec(&bflyt)
             .unwrap_or_else(|error| panic!("{} should serialize to JSON: {error}", path.display()));
-        let restored: Bflyt = serde_json::from_slice(&json)
+        let restored: Bflyt = serde_jsonc2::from_slice(&json)
             .unwrap_or_else(|error| panic!("{} JSON should deserialize: {error}", path.display()));
         let mut output = Cursor::new(Vec::new());
 
@@ -212,8 +213,8 @@ fn every_real_bflyt_fixture_round_trips_through_json() {
             .read_le()
             .unwrap_or_else(|error| panic!("{} JSON output should parse: {error}", path.display()));
         assert_eq!(
-            serde_json::to_value(&reparsed).expect("reparsed layout should serialize"),
-            serde_json::to_value(&restored).expect("restored layout should serialize"),
+            serde_jsonc2::to_value(&reparsed).expect("reparsed layout should serialize"),
+            serde_jsonc2::to_value(&restored).expect("restored layout should serialize"),
             "{} should survive binary -> JSON -> binary",
             path.display()
         );
@@ -229,12 +230,13 @@ fn pane_boundaries_are_a_json_children_hierarchy() {
         Section::PaneEnd(PaneEnd::new()),
     ]);
 
-    let json = serde_json::to_string_pretty(&bflyt).expect("layout should serialize to JSON");
+    let json = serde_jsonc2::to_string_pretty(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("PaneStart"));
     assert!(!json.contains("PaneEnd"));
     assert!(json.contains("\"children\""));
 
-    let restored: Bflyt = serde_json::from_str(&json).expect("nested pane JSON should deserialize");
+    let restored: Bflyt =
+        serde_jsonc2::from_str(&json).expect("nested pane JSON should deserialize");
     assert_eq!(restored.sections.len(), bflyt.sections.len());
     assert_eq!(restored.num_sections as usize, restored.sections.len());
     let marker_counts = |layout: &Bflyt| {
@@ -257,7 +259,7 @@ fn group_boundaries_are_a_json_children_hierarchy() {
         Section::GroupEnd(GroupEnd::new()),
     ]);
 
-    let json = serde_json::to_string_pretty(&bflyt).expect("layout should serialize to JSON");
+    let json = serde_jsonc2::to_string_pretty(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("GroupStart"));
     assert!(!json.contains("GroupEnd"));
     assert!(json.contains("\"name\": \"RootGroup\""));
@@ -265,7 +267,7 @@ fn group_boundaries_are_a_json_children_hierarchy() {
     assert!(json.contains("\"children\""));
 
     let restored: Bflyt =
-        serde_json::from_str(&json).expect("nested group JSON should deserialize");
+        serde_jsonc2::from_str(&json).expect("nested group JSON should deserialize");
     let marker_counts = |layout: &Bflyt| {
         layout.sections.iter().fold((0, 0), |counts, section| {
             (
@@ -314,7 +316,7 @@ fn parts_overrides_are_typed_in_json() {
         },
     ))]);
 
-    let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
+    let json = serde_jsonc2::to_string(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("referenced_data"));
     assert!(!json.contains("property_offset"));
     assert!(!json.contains("ext_user_data_offset"));
@@ -322,7 +324,8 @@ fn parts_overrides_are_typed_in_json() {
     assert_eq!(json.matches("\"pane_override\"").count(), 1);
     assert_eq!(json.matches("\"pane_basic_info\"").count(), 1);
 
-    let restored: Bflyt = serde_json::from_str(&json).expect("typed parts JSON should deserialize");
+    let restored: Bflyt =
+        serde_jsonc2::from_str(&json).expect("typed parts JSON should deserialize");
     assert_eq!(restored.sections.len(), bflyt.sections.len());
     let property = &restored.sections[1].as_parts().unwrap().properties[0];
     assert!(matches!(
@@ -342,14 +345,14 @@ fn window_metrics_and_flags_are_typed_in_json() {
         .set_frame_mode(WindowFrameMode::HorizontalFrameOnly);
     let bflyt = synthetic_bflyt(vec![Section::Window(window)]);
 
-    let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
+    let json = serde_jsonc2::to_string(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("\"rectangle\""));
     assert_eq!(json.matches("\"content_expansion_left\"").count(), 1);
     assert_eq!(json.matches("\"frame_thickness_bottom\"").count(), 1);
     assert!(json.contains("\"frame_mode\":\"HorizontalFrameOnly\""));
 
     let restored: Bflyt =
-        serde_json::from_str(&json).expect("typed window JSON should deserialize");
+        serde_jsonc2::from_str(&json).expect("typed window JSON should deserialize");
     assert_eq!(restored.sections.len(), bflyt.sections.len());
     let window = restored.sections[1].as_window().unwrap();
     assert_eq!(window.content_expansion_left, -1);
@@ -375,14 +378,14 @@ fn textbox_metadata_is_typed_in_json() {
     ]);
     let bflyt = synthetic_bflyt(vec![Section::Textbox(textbox)]);
 
-    let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
+    let json = serde_jsonc2::to_string(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("\"active_shadows\""));
     assert!(json.contains("\"vertical\":\"Center\""));
     assert!(json.contains("\"line_alignment\":\"Synchronous\""));
     assert_eq!(json.matches("\"line_transforms\"").count(), 1);
 
     let restored: Bflyt =
-        serde_json::from_str(&json).expect("typed textbox JSON should deserialize");
+        serde_jsonc2::from_str(&json).expect("typed textbox JSON should deserialize");
     assert_eq!(restored.sections.len(), bflyt.sections.len());
     let textbox = restored.sections[1].as_textbox().unwrap();
     assert_eq!(textbox.origin.vertical(), TextVerticalOrigin::Center);
@@ -401,12 +404,12 @@ fn smaller_scalar_fields_are_typed_in_json() {
         },
     ))]);
 
-    let json = serde_json::to_string(&bflyt).expect("layout should serialize to JSON");
+    let json = serde_jsonc2::to_string(&bflyt).expect("layout should serialize to JSON");
     assert!(!json.contains("\"num_sections\""));
     assert!(json.contains("\"is_drawn_from_middle\":true"));
     assert!(json.contains("\"part_scaling\":{\"unk1\":false"));
 
     let restored: Bflyt =
-        serde_json::from_str(&json).expect("typed scalar JSON should deserialize");
+        serde_jsonc2::from_str(&json).expect("typed scalar JSON should deserialize");
     assert_eq!(restored.sections.len(), bflyt.sections.len());
 }

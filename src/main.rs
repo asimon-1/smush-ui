@@ -146,13 +146,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|error| path_error("parse BFLYT input", &input, error))?;
             let output_file = File::create(&output)
                 .map_err(|error| path_error("create JSON output", &output, error))?;
-            serde_json::to_writer_pretty(BufWriter::new(output_file), &layout)
+            serde_jsonc2::to_writer_pretty(BufWriter::new(output_file), &layout)
                 .map_err(|error| path_error("write JSON output", &output, error))?;
         }
         Command::FromJson { input, output } => {
             let input_file =
                 File::open(&input).map_err(|error| path_error("open JSON input", &input, error))?;
-            let layout: Bflyt = serde_json::from_reader(BufReader::new(input_file))
+            let layout: Bflyt = serde_jsonc2::from_reader(BufReader::new(input_file))
                 .map_err(|error| path_error("parse JSON input", &input, error))?;
             let output_file = File::create(&output)
                 .map_err(|error| path_error("create BFLYT output", &output, error))?;

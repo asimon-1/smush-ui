@@ -201,11 +201,11 @@ fn projection_parameters_preserve_non_finite_float_bits_in_json() {
         reserved: [2; 3],
     };
 
-    let json = serde_json::to_value(&parameter).expect("parameter should serialize");
+    let json = serde_jsonc2::to_value(&parameter).expect("parameter should serialize");
     assert_eq!(json["translation"]["x"], 0.5);
     assert_eq!(json["translation"]["y"]["bits"], 0xffff_ffffu32);
     let restored: ProjectionTextureParameter =
-        serde_json::from_value(json).expect("parameter should deserialize");
+        serde_jsonc2::from_value(json).expect("parameter should deserialize");
     assert_eq!(restored.translation.y.to_bits(), 0xffff_ffff);
     assert_eq!(restored.scale.x.to_bits(), f32::INFINITY.to_bits());
 }

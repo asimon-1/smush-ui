@@ -588,7 +588,7 @@ fn malformed_input_and_output_conflicts_are_reported_without_partial_outputs() {
 }
 
 fn read_manifest(bundle: &Path) -> BundleManifest {
-    serde_json::from_slice(&fs::read(bundle.join("bntx.json")).unwrap()).unwrap()
+    serde_jsonc2::from_slice(&fs::read(bundle.join("bntx.json")).unwrap()).unwrap()
 }
 
 fn read_bntx(path: &Path) -> Bntx {

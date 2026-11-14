@@ -18,9 +18,9 @@ fn round_trips_fixed_width_group_names() {
     assert_eq!(parsed.name, "root");
     assert_eq!(parsed.members[0], "child");
 
-    let json = serde_json::to_string(&parsed).expect("group should serialize to JSON");
+    let json = serde_jsonc2::to_string(&parsed).expect("group should serialize to JSON");
     assert!(json.contains("\"members\":[\"child\"]"));
     let without_members: Group =
-        serde_json::from_str(r#"{"name":"root"}"#).expect("members should default to empty");
+        serde_jsonc2::from_str(r#"{"name":"root"}"#).expect("members should default to empty");
     assert!(without_members.members.is_empty());
 }

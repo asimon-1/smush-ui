@@ -211,7 +211,7 @@ and texture types can still be unpacked and repacked losslessly through their `.
 
 ## Library usage
 
-Use `Bflyt` with `binrw` to read or write binary layouts, and `serde_json` to edit their JSON representation:
+Use `Bflyt` with `binrw` to read or write binary layouts, and `serde_jsonc2` to edit their JSON representation:
 
 ```rust
 use std::io::Cursor;
@@ -222,8 +222,8 @@ use smush_ui::bflyt::Bflyt;
 let bytes = std::fs::read("input.bflyt")?;
 let layout: Bflyt = Cursor::new(bytes).read_le()?;
 
-let json = serde_json::to_string_pretty(&layout)?;
-let edited: Bflyt = serde_json::from_str(&json)?;
+let json = serde_jsonc2::to_string_pretty(&layout)?;
+let edited: Bflyt = serde_jsonc2::from_str(&json)?;
 
 let mut output = Cursor::new(Vec::new());
 output.write_le(&edited)?;

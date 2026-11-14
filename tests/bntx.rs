@@ -642,8 +642,8 @@ fn json_preserves_raw_and_non_finite_values() {
         ChannelSelector::Unknown(0xff)
     );
 
-    let json = serde_json::to_string(&parsed).expect("BNTX model should serialize");
-    let reparsed: Bntx = serde_json::from_str(&json).expect("BNTX model should deserialize");
+    let json = serde_jsonc2::to_string(&parsed).expect("BNTX model should serialize");
+    let reparsed: Bntx = serde_jsonc2::from_str(&json).expect("BNTX model should deserialize");
     assert_eq!(reparsed, parsed);
     assert_eq!(
         reparsed.textures[0].user_data[1].value,

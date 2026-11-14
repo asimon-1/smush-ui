@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_jsonc2::jsonc;
 use smush_ui::bntx::{
     Bntx, ChannelMode, ChannelSelector, ImageFormat, RgbaImage, SurfaceDimension, Texture,
     TextureDimension, TextureInfo, TextureLayout, TileMode, UserData, UserDataValue,
@@ -11,7 +11,7 @@ pub const BC7_UNORM: u32 = 0x2001;
 pub const BC7_SRGB: u32 = 0x2006;
 
 pub fn synthetic_bntx() -> Bntx {
-    let mut bntx: Bntx = serde_json::from_value(json!({
+    let mut bntx: Bntx = serde_jsonc2::from_value(jsonc!({
         "version": { "major": 4, "minor": 0, "micro": 0 },
         "alignment_exponent": 12,
         "target_address_size": 64,
