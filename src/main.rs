@@ -7,7 +7,6 @@ use std::{
     process::ExitCode,
 };
 
-use atomic_write_file::AtomicWriteFile;
 use binrw::{BinReaderExt, BinWriterExt};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
@@ -25,9 +24,10 @@ use smush_ui::{
         inspect_bntx,
         patch::{PatchSourceFormat, create_bntx_patch, patch_bntx_file},
     },
+    patch::{PatchArcOptions, patch_archive},
     sarc::{
         SarcArchive,
-        fs::{insert_file, pack_from_directory, unpack_to_directory},
+        fs::{insert_file, pack_from_directory, unpack_to_directory, write_archive_atomic},
         inspect::{SarcDiffOptions, SarcEntryIdentity, SarcInspection},
     },
 };
@@ -64,6 +64,12 @@ enum Command {
         /// Replace an existing entry with the same archive path.
         #[arg(long)]
         replace: bool,
+    },
+    /// Apply a versioned patch manifest to a SARC archive.
+    PatchArc {
+        input: PathBuf,
+        manifest: PathBuf,
+        output: PathBuf,
     },
     /// Extract a BNTX container to a lossless editable bundle.
     UnpackBntx {
@@ -281,18 +287,15 @@ fn run() -> Result<RunOutcome, Box<dyn std::error::Error>> {
                 .map_err(|error| path_error("read insertion source", &source_file, error))?;
             insert_file(&mut archive, archive_path, source_data, replace)
                 .map_err(|error| path_error("insert archive entry into", &input, error))?;
-            let bytes = archive
-                .to_bytes()
-                .map_err(|error| path_error("serialize SARC output", &output, error))?;
-            let mut output_file = AtomicWriteFile::options()
-                .open(&output)
-                .map_err(|error| path_error("create atomic SARC output", &output, error))?;
-            output_file
-                .write_all(&bytes)
-                .map_err(|error| path_error("write atomic SARC output", &output, error))?;
-            output_file
-                .commit()
-                .map_err(|error| path_error("replace SARC output", &output, error))?;
+            write_archive_atomic(&archive, &output)?;
+        }
+        Command::PatchArc {
+            input,
+            manifest,
+            output,
+        } => {
+            patch_archive(&input, &manifest, &output, PatchArcOptions)
+                .map_err(|error| paths_error("patch SARC archive", &input, &output, error))?;
         }
         Command::UnpackBntx {
             input,

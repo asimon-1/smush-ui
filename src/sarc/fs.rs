@@ -1,4 +1,5 @@
 use super::{MAX_ENTRIES, SarcArchive, SarcEntry};
+use atomic_write_file::AtomicWriteFile;
 use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
@@ -20,26 +21,80 @@ pub fn insert_file(
 ) -> io::Result<()> {
     let name = name.into();
     archive_name_to_path(&name)?;
+    let existing = named_entry_index(archive, &name)?;
 
-    if let Some(position) = archive
-        .entries
-        .iter()
-        .position(|entry| entry.name.as_deref() == Some(name.as_str()))
-    {
-        if !replace {
-            return Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                format!("archive entry {name:?} already exists"),
-            ));
-        }
+    if existing.is_some() && !replace {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("archive entry {name:?} already exists"),
+        ));
+    }
+    if archive.entries.len() >= usize::from(MAX_ENTRIES) && existing.is_none() {
+        return Err(invalid_input("SARC entry count exceeds 0x3fff"));
+    }
+    upsert_named(archive, name, data)
+}
+
+pub(crate) fn upsert_named(
+    archive: &mut SarcArchive,
+    name: String,
+    data: Vec<u8>,
+) -> io::Result<()> {
+    archive_name_to_path(&name)?;
+    if let Some(position) = named_entry_index(archive, &name)? {
         archive.entries[position] = SarcEntry::new(name, data);
     } else {
-        if archive.entries.len() >= usize::from(MAX_ENTRIES) {
-            return Err(invalid_input("SARC entry count exceeds 0x3fff"));
-        }
         archive.entries.push(SarcEntry::new(name, data));
     }
     Ok(())
+}
+
+pub(crate) fn remove_named(archive: &mut SarcArchive, name: &str) -> io::Result<()> {
+    archive_name_to_path(name)?;
+    let position = named_entry_index(archive, name)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("archive entry {name:?} does not exist"),
+        )
+    })?;
+    archive.entries.remove(position);
+    Ok(())
+}
+
+pub(crate) fn named_entry_index(archive: &SarcArchive, name: &str) -> io::Result<Option<usize>> {
+    let mut found = None;
+    for (index, entry) in archive.entries.iter().enumerate() {
+        if entry.name.as_deref() == Some(name) {
+            if found.is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("duplicate named SARC entries {name:?}"),
+                ));
+            }
+            found = Some(index);
+        }
+    }
+    Ok(found)
+}
+
+/// Serializes a complete archive before replacing the destination.
+pub fn write_archive_atomic(archive: &SarcArchive, output: &Path) -> io::Result<()> {
+    let bytes = archive.to_bytes().map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "failed to serialize SARC output {}: {error}",
+                output.display()
+            ),
+        )
+    })?;
+    let mut file = AtomicWriteFile::options()
+        .open(output)
+        .map_err(|error| path_error("create atomic SARC output", output, error))?;
+    file.write_all(&bytes)
+        .map_err(|error| path_error("write atomic SARC output", output, error))?;
+    file.commit()
+        .map_err(|error| path_error("replace SARC output", output, error))
 }
 
 pub fn unpack_to_directory(archive: &SarcArchive, destination: impl AsRef<Path>) -> io::Result<()> {
@@ -119,7 +174,7 @@ fn validate_extract_entries(archive: &SarcArchive) -> io::Result<Vec<ExtractEntr
     Ok(entries)
 }
 
-fn archive_name_to_path(name: &str) -> io::Result<PathBuf> {
+pub(crate) fn archive_name_to_path(name: &str) -> io::Result<PathBuf> {
     if name.is_empty() {
         return Err(invalid_archive_name(name, "the name is empty"));
     }
@@ -141,7 +196,40 @@ fn archive_name_to_path(name: &str) -> io::Result<PathBuf> {
             "rooted paths and parent traversal are not allowed",
         ));
     }
+    for component in name.split('/') {
+        validate_portable_component(component)?;
+    }
     Ok(path)
+}
+
+pub(crate) fn validate_portable_component(component: &str) -> io::Result<()> {
+    let stem = component.split('.').next().unwrap_or(component);
+    let device = ["con", "prn", "aux", "nul"]
+        .iter()
+        .any(|name| stem.eq_ignore_ascii_case(name))
+        || ["com", "lpt"].iter().any(|prefix| {
+            stem.get(..3)
+                .is_some_and(|value| value.eq_ignore_ascii_case(prefix))
+                && stem
+                    .as_bytes()
+                    .get(3)
+                    .is_some_and(|value| matches!(value, b'1'..=b'9'))
+                && stem.len() == 4
+        });
+    if component.is_empty()
+        || component == "."
+        || component == ".."
+        || component.ends_with([' ', '.'])
+        || component.bytes().any(|byte| byte < 0x20)
+        || component.contains(':')
+        || component.contains(['<', '>', '"', '|', '?', '*'])
+        || device
+    {
+        return Err(invalid_input(format!(
+            "unsafe portable path component {component:?}"
+        )));
+    }
+    Ok(())
 }
 
 fn is_windows_drive_component(component: &str) -> bool {
