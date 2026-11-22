@@ -8,6 +8,7 @@ mod input;
 mod inspect;
 mod model;
 mod parser;
+pub mod patch;
 mod relocation;
 mod swizzle;
 mod validation;
@@ -16,7 +17,8 @@ mod writer;
 use binrw::{BinResult, Error as BinError};
 
 pub use self::creation::{
-    AddTextureOptions, NewTextureFormat, TextureProfile, add_texture, create_bntx,
+    AddTextureOptions, NewTextureFormat, TexturePatch, TextureProfile, TextureUpsert, add_texture,
+    apply_texture_patch, create_bntx,
 };
 pub use self::format::{
     ChannelFormat, ChannelSelector, ImageFormat, Platform, SurfaceDimension, TextureDimension,

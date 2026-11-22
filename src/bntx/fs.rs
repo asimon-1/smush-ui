@@ -294,7 +294,7 @@ pub fn create_from_png_directory(
     write_bntx_atomic(&bntx, output)
 }
 
-fn write_bntx_atomic(bntx: &Bntx, output: &Path) -> io::Result<()> {
+pub(super) fn write_bntx_atomic(bntx: &Bntx, output: &Path) -> io::Result<()> {
     let bytes = bntx
         .to_bytes()
         .map_err(|error| invalid_data(format!("failed to serialize BNTX: {error}")))?;
@@ -493,7 +493,7 @@ fn hash_bytes(bytes: &[u8]) -> String {
     format!("{hash:016x}")
 }
 
-fn manifest_sidecar_path(value: &str, extension: &str) -> io::Result<PathBuf> {
+pub(super) fn manifest_sidecar_path(value: &str, extension: &str) -> io::Result<PathBuf> {
     if value.is_empty() || value.contains('\\') {
         return Err(invalid_data(format!(
             "unsafe bundle sidecar path {value:?}"
@@ -543,7 +543,7 @@ fn is_windows_device_name(name: &str) -> bool {
         })
 }
 
-fn validate_bundle_root(root: &Path) -> io::Result<()> {
+pub(super) fn validate_bundle_root(root: &Path) -> io::Result<()> {
     let metadata = fs::symlink_metadata(root)
         .map_err(|error| path_error("inspect bundle directory", root, error))?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
@@ -579,7 +579,7 @@ fn validate_bundle_root(root: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn read_regular_file(path: &Path, label: &str) -> io::Result<Vec<u8>> {
+pub(super) fn read_regular_file(path: &Path, label: &str) -> io::Result<Vec<u8>> {
     let metadata = fs::symlink_metadata(path)
         .map_err(|error| path_error(&format!("inspect {label}"), path, error))?;
     if metadata.file_type().is_symlink() || !metadata.is_file() {

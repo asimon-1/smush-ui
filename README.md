@@ -228,9 +228,9 @@ texture's additional image levels automatically. It reports missing or invalid P
 texture types instead of silently discarding an edit. Re-encoding is lossy, so an edited texture
 will not normally have the same compressed bytes as its original `.bin` file.
 
-Before a PNG can be added, it needs a BNTX storage profile: how the image is compressed, how its
-color channels are used, and how many image levels it contains. Use `--like` to copy that profile
-from an existing texture. The new PNG still supplies the name, dimensions, and visible image:
+Before a PNG can be added, it needs a BNTX storage profile: how the image is compressed and how its
+color channels are used. Use `--like` to copy that profile from an existing texture. PNG additions
+and replacements generate one image level. The new PNG supplies the name, dimensions, and visible image:
 
 ```sh
 cargo run -- add-bntx-texture textures.bntx image.png new_texture updated.bntx \

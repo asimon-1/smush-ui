@@ -23,6 +23,7 @@ use smush_ui::{
             unpack_to_directory as unpack_bntx_directory,
         },
         inspect_bntx,
+        patch::patch_bntx_file,
     },
     sarc::{
         SarcArchive,
@@ -89,7 +90,7 @@ enum Command {
         source_png: PathBuf,
         texture_name: String,
         output: PathBuf,
-        /// Copy the texture profile and mip count from an existing texture.
+        /// Copy the texture profile from an existing texture.
         #[arg(long, conflicts_with = "format")]
         like: Option<String>,
         /// Use an explicit format; new textures default to BC7 UNORM.
@@ -98,6 +99,12 @@ enum Command {
         /// Replace an existing texture with the requested name.
         #[arg(long)]
         replace: bool,
+    },
+    /// Apply a texture patch directory to a BNTX container.
+    PatchBntx {
+        input: PathBuf,
+        patch_directory: PathBuf,
+        output: PathBuf,
     },
     /// Create a new BNTX container from one directory of PNG files.
     CreateBntx {
@@ -315,6 +322,14 @@ fn run() -> Result<RunOutcome, Box<dyn std::error::Error>> {
                 AddTextureOptions { profile, replace },
             )
             .map_err(|error| paths_error("add BNTX texture", &input, &output, error))?;
+        }
+        Command::PatchBntx {
+            input,
+            patch_directory,
+            output,
+        } => {
+            patch_bntx_file(&input, &patch_directory, &output)
+                .map_err(|error| paths_error("patch BNTX", &input, &output, error))?;
         }
         Command::CreateBntx {
             input_png_directory,
