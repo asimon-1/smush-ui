@@ -1,3 +1,5 @@
+mod diff;
+
 use std::{
     fs::{self, File},
     io::{self, BufReader, BufWriter, Write},
@@ -8,10 +10,11 @@ use std::{
 use atomic_write_file::AtomicWriteFile;
 use binrw::{BinReaderExt, BinWriterExt};
 use clap::{Parser, Subcommand, ValueEnum};
+use serde::Serialize;
 use smush_ui::{
     bflyt::Bflyt,
     bntx::{
-        AddTextureOptions, Bntx, ChannelMode, NewTextureFormat, TextureProfile,
+        AddTextureOptions, Bntx, BntxInspection, ChannelMode, NewTextureFormat, TextureProfile,
         fs::{
             PackOptions as BntxPackOptions, UnpackOptions as BntxUnpackOptions,
             add_texture_to_file as add_bntx_texture,
@@ -19,10 +22,12 @@ use smush_ui::{
             pack_from_directory as pack_bntx_directory,
             unpack_to_directory as unpack_bntx_directory,
         },
+        inspect_bntx,
     },
     sarc::{
         SarcArchive,
         fs::{insert_file, pack_from_directory, unpack_to_directory},
+        inspect::{SarcDiffOptions, SarcEntryIdentity, SarcInspection},
     },
 };
 
@@ -105,6 +110,50 @@ enum Command {
         #[arg(long, value_enum, default_value = "bc7-unorm")]
         format: BntxTextureFormat,
     },
+    /// List files stored in a SARC archive.
+    ListArc {
+        input: PathBuf,
+        #[arg(long, value_enum, default_value = "text")]
+        format: OutputFormat,
+    },
+    /// Compare the files stored in two SARC archives.
+    DiffArc {
+        before: PathBuf,
+        after: PathBuf,
+        #[arg(long, value_enum, default_value = "text")]
+        format: OutputFormat,
+        /// Return status 3 when differences are found.
+        #[arg(long)]
+        check: bool,
+        /// Include semantic field changes for embedded BFLYT files.
+        #[arg(long)]
+        expand_bflyt: bool,
+        /// Include texture-level changes for embedded BNTX files.
+        #[arg(long)]
+        expand_bntx: bool,
+    },
+    /// List textures stored in a BNTX container.
+    ListBntx {
+        input: PathBuf,
+        #[arg(long, value_enum, default_value = "text")]
+        format: OutputFormat,
+    },
+    /// Compare textures stored in two BNTX containers.
+    DiffBntx {
+        before: PathBuf,
+        after: PathBuf,
+        #[arg(long, value_enum, default_value = "text")]
+        format: OutputFormat,
+        /// Return status 3 when differences are found.
+        #[arg(long)]
+        check: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum OutputFormat {
+    Text,
+    Json,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -126,9 +175,16 @@ impl From<BntxTextureFormat> for NewTextureFormat {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RunOutcome {
+    Success,
+    DifferencesFound,
+}
+
 fn main() -> ExitCode {
     match run() {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(RunOutcome::Success) => ExitCode::SUCCESS,
+        Ok(RunOutcome::DifferencesFound) => ExitCode::from(3),
         Err(error) => {
             eprintln!("error: {error}");
             ExitCode::FAILURE
@@ -136,7 +192,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
+fn run() -> Result<RunOutcome, Box<dyn std::error::Error>> {
     match Cli::parse().command {
         Command::ToJson { input, output } => {
             let input_file = File::open(&input)
@@ -274,9 +330,125 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             )
             .map_err(|error| paths_error("create BNTX", &input_png_directory, &output, error))?;
         }
+        Command::ListArc { input, format } => {
+            let bytes =
+                fs::read(&input).map_err(|error| path_error("read SARC input", &input, error))?;
+            let archive = SarcArchive::from_bytes(&bytes)
+                .map_err(|error| path_error("parse SARC input", &input, error))?;
+            let inspection = smush_ui::sarc::inspect::inspect(&archive);
+            write_sarc_inspection(&inspection, format)?;
+        }
+        Command::DiffArc {
+            before,
+            after,
+            format,
+            check,
+            expand_bflyt,
+            expand_bntx,
+        } => {
+            return diff::run_arc(
+                &before,
+                &after,
+                format,
+                check,
+                SarcDiffOptions {
+                    expand_bflyt,
+                    expand_bntx,
+                },
+            );
+        }
+        Command::ListBntx { input, format } => {
+            let bytes =
+                fs::read(&input).map_err(|error| path_error("read BNTX input", &input, error))?;
+            let bntx = Bntx::from_bytes(&bytes)
+                .map_err(|error| path_error("parse BNTX input", &input, error))?;
+            write_bntx_inspection(&inspect_bntx(&bntx), format)?;
+        }
+        Command::DiffBntx {
+            before,
+            after,
+            format,
+            check,
+        } => return diff::run_bntx(&before, &after, format, check),
     }
 
+    Ok(RunOutcome::Success)
+}
+
+#[derive(Serialize)]
+struct JsonOutput<'a, T> {
+    schema_version: u32,
+    result: &'a T,
+}
+
+fn write_json<T: Serialize>(value: &T) -> Result<(), Box<dyn std::error::Error>> {
+    let stdout = io::stdout();
+    let mut writer = stdout.lock();
+    serde_jsonc2::to_writer_pretty(
+        &mut writer,
+        &JsonOutput {
+            schema_version: 1,
+            result: value,
+        },
+    )?;
+    writeln!(writer)?;
     Ok(())
+}
+
+fn write_sarc_inspection(
+    inspection: &SarcInspection,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if matches!(format, OutputFormat::Json) {
+        return write_json(inspection);
+    }
+    println!("entries: {}", inspection.entry_count);
+    for entry in &inspection.entries {
+        println!(
+            "[{}] {} size={} sha256={} kind={} extension={}",
+            entry.stored_index,
+            display_identity(&entry.identity),
+            entry.payload_size,
+            entry.payload_sha256,
+            entry.detected_kind.as_str(),
+            entry.extension.as_deref().unwrap_or("-")
+        );
+    }
+    Ok(())
+}
+
+fn write_bntx_inspection(
+    inspection: &BntxInspection,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if matches!(format, OutputFormat::Json) {
+        return write_json(inspection);
+    }
+    println!("textures: {}", inspection.texture_count);
+    for texture in &inspection.textures {
+        println!(
+            "[{}] {} {}x{}x{} format=0x{:08x} {:?}/{:?} mips={} image_size={} sha256={}",
+            texture.index,
+            texture.name,
+            texture.width,
+            texture.height,
+            texture.depth,
+            texture.raw_format,
+            texture.channel_format,
+            texture.type_format,
+            texture.mip_count,
+            texture.image_size,
+            texture.image_sha256
+        );
+    }
+    Ok(())
+}
+
+fn display_identity(identity: &SarcEntryIdentity) -> String {
+    match identity {
+        SarcEntryIdentity::Path { path } => path.clone(),
+        SarcEntryIdentity::Hash { hash } => format!("hash:{hash}"),
+    }
 }
 
 fn path_error(action: &str, path: &Path, error: impl std::fmt::Display) -> io::Error {

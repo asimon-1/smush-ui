@@ -5,6 +5,7 @@ pub mod format;
 pub mod fs;
 mod image;
 mod input;
+mod inspect;
 mod model;
 mod parser;
 mod relocation;
@@ -24,6 +25,9 @@ pub use self::format::{
 pub use self::image::{
     ChannelMode, EncodedImage, RgbaImage, decode_texture, encode_new_texture, encode_texture,
     read_png, supports_image_format, write_png,
+};
+pub use self::inspect::{
+    BntxDiff, BntxInspection, BntxTextureChange, BntxTextureRecord, diff_bntx, inspect_bntx,
 };
 pub use self::model::{Bntx, FloatValue, Texture, TextureInfo, UserData, UserDataValue, Version};
 pub use self::swizzle::{SurfaceLayout, derive_block_height_exponent};

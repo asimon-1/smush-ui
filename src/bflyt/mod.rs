@@ -4,6 +4,7 @@ use binrw::{
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
 
+pub mod inspect;
 pub mod sections;
 use self::sections::{
     Bounding, Control, FontList, Group, GroupEnd, GroupStart, Layout, Material, Pane, PaneEnd,

@@ -13,6 +13,7 @@ png = "=0.18.1"
 rusty_dds = { version = "=0.9.0", default-features = false, features = ["decode", "encode"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_jsonc2 = "0.1.2"
+sha2 = "=0.11.0"
 walkdir = "2.5"
 
 # rusty_dds 0.9.0 contains a reachable debug-only assertion in its scalar BC7

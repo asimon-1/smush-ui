@@ -5,6 +5,7 @@ use binrw::{
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 pub mod fs;
+pub mod inspect;
 
 const SARC_HEADER_SIZE: u64 = 0x14;
 const SFAT_HEADER_SIZE: u64 = 0x0c;
