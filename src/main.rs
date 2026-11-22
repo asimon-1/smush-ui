@@ -23,7 +23,7 @@ use smush_ui::{
             unpack_to_directory as unpack_bntx_directory,
         },
         inspect_bntx,
-        patch::patch_bntx_file,
+        patch::{PatchSourceFormat, create_bntx_patch, patch_bntx_file},
     },
     sarc::{
         SarcArchive,
@@ -106,6 +106,14 @@ enum Command {
         patch_directory: PathBuf,
         output: PathBuf,
     },
+    /// Generate a delta bundle between two BNTX containers.
+    CreateBntxPatch {
+        base: PathBuf,
+        modified: PathBuf,
+        patch_directory: PathBuf,
+        #[arg(long, value_enum, default_value = "png")]
+        source_format: BntxPatchSourceFormat,
+    },
     /// Create a new BNTX container from one directory of PNG files.
     CreateBntx {
         input_png_directory: PathBuf,
@@ -169,6 +177,21 @@ enum BntxTextureFormat {
     Bc5Unorm,
     Bc7Unorm,
     Bc7Srgb,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum BntxPatchSourceFormat {
+    Bin,
+    Png,
+}
+
+impl From<BntxPatchSourceFormat> for PatchSourceFormat {
+    fn from(value: BntxPatchSourceFormat) -> Self {
+        match value {
+            BntxPatchSourceFormat::Bin => Self::Bin,
+            BntxPatchSourceFormat::Png => Self::Png,
+        }
+    }
 }
 
 impl From<BntxTextureFormat> for NewTextureFormat {
@@ -330,6 +353,22 @@ fn run() -> Result<RunOutcome, Box<dyn std::error::Error>> {
         } => {
             patch_bntx_file(&input, &patch_directory, &output)
                 .map_err(|error| paths_error("patch BNTX", &input, &output, error))?;
+        }
+        Command::CreateBntxPatch {
+            base,
+            modified,
+            patch_directory,
+            source_format,
+        } => {
+            let summary =
+                create_bntx_patch(&base, &modified, &patch_directory, source_format.into())
+                    .map_err(|error| {
+                        paths_error("create BNTX patch", &base, &patch_directory, error)
+                    })?;
+            println!("{} upserts, {} removals", summary.upserts, summary.removals);
+            for name in summary.png_fallbacks {
+                println!("BIN fallback: {name}");
+            }
         }
         Command::CreateBntx {
             input_png_directory,

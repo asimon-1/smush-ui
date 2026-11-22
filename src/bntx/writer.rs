@@ -258,7 +258,6 @@ impl TexturePlan {
                 array_count: texture.info.array_count,
                 texture_layout: texture.info.texture_layout.to_raw(),
                 texture_layout2: texture.info.texture_layout2,
-                reserved: texture.info.reserved,
                 image_size: u32::try_from(texture.image_data.len())
                     .map_err(|_| bntx_error(self.offset, "BNTX image payload exceeds 4 GiB"))?,
                 image_alignment: texture.info.image_alignment,

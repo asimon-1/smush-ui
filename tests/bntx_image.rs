@@ -53,7 +53,6 @@ fn texture_model(format: u32, width: u32, height: u32, mip_count: usize) -> Text
             array_count: 1,
             texture_layout: TextureLayout::from_raw(u32::from(block_height)),
             texture_layout2: 0,
-            reserved: [0; 20],
             image_alignment: 0x200,
             channels: channels_for(format.to_raw()),
             surface_dimension: SurfaceDimension::TwoD,

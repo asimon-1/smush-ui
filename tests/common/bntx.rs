@@ -102,7 +102,6 @@ fn encoded_texture(format: u32, width: u32, height: u32, name: &str, seed: u8) -
             array_count: 1,
             texture_layout: TextureLayout::from_raw(u32::from(block_height)),
             texture_layout2: 0,
-            reserved: [seed; 20],
             image_alignment: 0x200,
             channels,
             surface_dimension: SurfaceDimension::TwoD,

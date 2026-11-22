@@ -377,7 +377,6 @@ fn adds_each_explicit_format_with_corpus_defaults() {
         assert_eq!((texture.info.width, texture.info.height), (9, 7));
         assert_eq!((texture.info.depth, texture.info.array_count), (1, 1));
         assert_eq!(texture.info.texture_layout2, 0x0001_0007);
-        assert_eq!(texture.info.reserved, [0; 20]);
         assert_eq!(texture.info.image_alignment, 0x200);
         assert_eq!(texture.info.channels, channels_for(raw));
         assert_eq!(texture.info.surface_dimension, SurfaceDimension::TwoD);

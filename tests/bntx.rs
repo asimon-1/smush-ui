@@ -536,9 +536,27 @@ fn synthetic_bntx(texture_count: usize, with_user_data: bool) -> SyntheticFixtur
 }
 
 #[test]
+fn texture_info_json_rejects_unknown_fields() {
+    let parsed = Bntx::from_bytes(&synthetic_bntx(1, false).bytes).unwrap();
+    let mut json = serde_jsonc2::to_value(&parsed).unwrap();
+    json["textures"][0]["info"]["unknown"] = serde_jsonc2::jsonc!(0);
+    assert!(serde_jsonc2::from_value::<Bntx>(json).is_err());
+}
+
+#[test]
 fn parses_compact_single_and_two_texture_fixtures() {
     let single = synthetic_bntx(1, true);
     let parsed = Bntx::from_bytes(&single.bytes).expect("single synthetic fixture should parse");
+    let mut changed_padding = single.bytes.clone();
+    let brti = single.offsets.texture_blocks[0];
+    changed_padding[brti + 0x3c..brti + 0x50].fill(0xff);
+    assert_eq!(Bntx::from_bytes(&changed_padding).unwrap(), parsed);
+    let written = parsed.to_bytes().unwrap();
+    let written_brti = written
+        .windows(4)
+        .position(|window| window == b"BRTI")
+        .unwrap();
+    assert_eq!(&written[written_brti + 0x3c..written_brti + 0x50], &[0; 20]);
     assert_eq!(parsed.name, "synthetic");
     assert_eq!(
         parsed.version,
@@ -566,10 +584,6 @@ fn parses_compact_single_and_two_texture_fixtures() {
     assert_eq!(texture.info.array_count, 1);
     assert_eq!(texture.info.texture_layout.to_raw(), 0xa5b6c7d2);
     assert_eq!(texture.info.texture_layout2, 0x12340000);
-    assert_eq!(
-        texture.info.reserved,
-        std::array::from_fn(|index| index as u8)
-    );
     assert_eq!(texture.info.image_alignment, 0x200);
     assert_eq!(
         texture.info.channels,
@@ -984,7 +998,6 @@ fn writes_compact_fixture_with_exact_layout_and_relocations() {
     put_u32(&mut expected, 0x220, 1);
     put_u32(&mut expected, 0x224, 0xa5b6_c7d2);
     put_u32(&mut expected, 0x228, 0x1234_0000);
-    expected[0x22c..0x240].copy_from_slice(&std::array::from_fn::<_, 20, _>(|i| i as u8));
     put_u32(&mut expected, 0x240, 16);
     put_u32(&mut expected, 0x244, 0x200);
     expected[0x248..0x24c].copy_from_slice(&[2, 3, 4, 5]);

@@ -466,7 +466,7 @@ impl BundleManifest {
     }
 }
 
-fn sidecar_stem(index: usize, name: &str) -> String {
+pub(super) fn sidecar_stem(index: usize, name: &str) -> String {
     let mut safe = name
         .chars()
         .map(|character| {

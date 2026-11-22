@@ -7,9 +7,239 @@ use common::{
 use smush_ui::bntx::{
     AddTextureOptions, Bntx, ChannelMode, ImageFormat, NewTextureFormat, TexturePatch,
     TextureProfile, TextureUpsert, add_texture, apply_texture_patch, encode_texture,
-    patch::patch_bntx_file, write_png,
+    patch::{PatchSourceFormat, create_bntx_patch, patch_bntx_file},
+    write_png,
 };
 use std::{fs, process::Command};
+
+#[test]
+fn generated_bin_delta_round_trips_mixed_edits_and_order() {
+    let workspace = TestDirectory::new("bin-delta");
+    let base = synthetic_bntx();
+    let mut modified = base.clone();
+    modified.textures.remove(1);
+    modified.textures[0].user_data.clear();
+    let mut added = modified.textures[0].clone();
+    added.name = "new texture".into();
+    modified.textures.insert(0, added);
+    modified.textures.swap(1, 2);
+    let base_path = workspace.path().join("base.bntx");
+    let modified_path = workspace.path().join("modified.bntx");
+    let output = workspace.path().join("out.bntx");
+    let patch_dir = workspace.path().join("delta");
+    fs::write(&base_path, base.to_bytes().unwrap()).unwrap();
+    fs::write(&modified_path, modified.to_bytes().unwrap()).unwrap();
+    let summary = create_bntx_patch(
+        &base_path,
+        &modified_path,
+        &patch_dir,
+        PatchSourceFormat::Bin,
+    )
+    .unwrap();
+    assert_eq!((summary.upserts, summary.removals), (2, 1));
+    let manifest = fs::read_to_string(patch_dir.join("bntx-patch.json")).unwrap();
+    assert!(!manifest.contains("reserved"));
+    assert!(manifest.contains("final_texture_order"));
+    patch_bntx_file(&base_path, &patch_dir, &output).unwrap();
+    assert_eq!(
+        Bntx::from_bytes(&fs::read(&output).unwrap()).unwrap(),
+        Bntx::from_bytes(&fs::read(&modified_path).unwrap()).unwrap()
+    );
+    let conflict = create_bntx_patch(
+        &base_path,
+        &modified_path,
+        &patch_dir,
+        PatchSourceFormat::Bin,
+    )
+    .unwrap_err();
+    assert_eq!(conflict.kind(), std::io::ErrorKind::AlreadyExists);
+}
+
+#[test]
+fn generated_empty_and_reorder_only_deltas() {
+    let workspace = TestDirectory::new("empty-delta");
+    let base = synthetic_bntx();
+    let base_path = workspace.path().join("base.bntx");
+    fs::write(&base_path, base.to_bytes().unwrap()).unwrap();
+    let empty = workspace.path().join("empty");
+    create_bntx_patch(&base_path, &base_path, &empty, PatchSourceFormat::Png).unwrap();
+    assert!(!empty.join("textures").exists());
+    let output = workspace.path().join("empty.bntx");
+    patch_bntx_file(&base_path, &empty, &output).unwrap();
+    assert_eq!(Bntx::from_bytes(&fs::read(output).unwrap()).unwrap(), base);
+    let mut reordered = base.clone();
+    reordered.textures.reverse();
+    let reordered_path = workspace.path().join("reordered.bntx");
+    fs::write(&reordered_path, reordered.to_bytes().unwrap()).unwrap();
+    let reorder = workspace.path().join("reorder");
+    create_bntx_patch(
+        &base_path,
+        &reordered_path,
+        &reorder,
+        PatchSourceFormat::Bin,
+    )
+    .unwrap();
+    assert!(!reorder.join("textures").exists());
+    assert!(
+        fs::read_to_string(reorder.join("bntx-patch.json"))
+            .unwrap()
+            .contains("final_texture_order")
+    );
+    let output = workspace.path().join("reordered-output.bntx");
+    patch_bntx_file(&base_path, &reorder, &output).unwrap();
+    assert_eq!(
+        Bntx::from_bytes(&fs::read(output).unwrap()).unwrap(),
+        reordered
+    );
+}
+
+#[test]
+fn generated_replacement_and_removal_deltas() {
+    let workspace = TestDirectory::new("simple-deltas");
+    let base = synthetic_bntx();
+    let base_path = workspace.path().join("base.bntx");
+    fs::write(&base_path, base.to_bytes().unwrap()).unwrap();
+    let mut replacement = base.clone();
+    replacement.textures[1].info.flags ^= 1;
+    let replacement_path = workspace.path().join("replacement.bntx");
+    fs::write(&replacement_path, replacement.to_bytes().unwrap()).unwrap();
+    let replacement_dir = workspace.path().join("replacement");
+    let summary = create_bntx_patch(
+        &base_path,
+        &replacement_path,
+        &replacement_dir,
+        PatchSourceFormat::Bin,
+    )
+    .unwrap();
+    assert_eq!((summary.upserts, summary.removals), (1, 0));
+    let output = workspace.path().join("replacement-output.bntx");
+    patch_bntx_file(&base_path, &replacement_dir, &output).unwrap();
+    assert_eq!(
+        Bntx::from_bytes(&fs::read(output).unwrap()).unwrap(),
+        replacement
+    );
+
+    let mut removed = base.clone();
+    removed.textures.remove(1);
+    let removed_path = workspace.path().join("removed.bntx");
+    fs::write(&removed_path, removed.to_bytes().unwrap()).unwrap();
+    let removed_dir = workspace.path().join("removed");
+    let summary = create_bntx_patch(
+        &base_path,
+        &removed_path,
+        &removed_dir,
+        PatchSourceFormat::Png,
+    )
+    .unwrap();
+    assert_eq!((summary.upserts, summary.removals), (0, 1));
+    assert!(!removed_dir.join("textures").exists());
+    let output = workspace.path().join("removed-output.bntx");
+    patch_bntx_file(&base_path, &removed_dir, &output).unwrap();
+    assert_eq!(
+        Bntx::from_bytes(&fs::read(output).unwrap()).unwrap(),
+        removed
+    );
+}
+
+#[test]
+fn malformed_final_order_preserves_existing_output() {
+    let workspace = TestDirectory::new("order-reject");
+    let base = synthetic_bntx();
+    let base_path = workspace.path().join("base.bntx");
+    fs::write(&base_path, base.to_bytes().unwrap()).unwrap();
+    let patch_dir = workspace.path().join("patch");
+    create_bntx_patch(&base_path, &base_path, &patch_dir, PatchSourceFormat::Bin).unwrap();
+    let manifest_path = patch_dir.join("bntx-patch.json");
+    let original = fs::read_to_string(&manifest_path).unwrap();
+    let output = workspace.path().join("output.bntx");
+    fs::write(&output, b"preserve").unwrap();
+    for order in ["[]", "[\"unknown\", \"unknown\", \"unknown\", \"unknown\"]"] {
+        let malformed = format!(
+            "{{\"final_texture_order\": {order},{}",
+            original.trim_start_matches('{')
+        );
+        fs::write(&manifest_path, malformed).unwrap();
+        assert!(patch_bntx_file(&base_path, &patch_dir, &output).is_err());
+        assert_eq!(fs::read(&output).unwrap(), b"preserve");
+    }
+}
+
+#[test]
+fn bin_info_rejects_unknown_fields() {
+    let workspace = TestDirectory::new("bin-strict");
+    let base = synthetic_bntx();
+    let base_path = workspace.path().join("base.bntx");
+    fs::write(&base_path, base.to_bytes().unwrap()).unwrap();
+    let patch_dir = workspace.path().join("patch");
+    create_bntx_patch(&base_path, &base_path, &patch_dir, PatchSourceFormat::Bin).unwrap();
+    let mut changed = base.clone();
+    changed.textures[0].info.flags ^= 1;
+    let changed_path = workspace.path().join("changed.bntx");
+    fs::write(&changed_path, changed.to_bytes().unwrap()).unwrap();
+    let strict = workspace.path().join("strict");
+    create_bntx_patch(&base_path, &changed_path, &strict, PatchSourceFormat::Bin).unwrap();
+    let manifest_path = strict.join("bntx-patch.json");
+    let original = fs::read_to_string(&manifest_path).unwrap();
+    for field in ["reserved", "arbitrary"] {
+        let altered = original.replacen("\"flags\":", &format!("\"{field}\": 0, \"flags\":"), 1);
+        fs::write(&manifest_path, altered).unwrap();
+        assert!(patch_bntx_file(&base_path, &strict, workspace.path().join("out.bntx")).is_err());
+    }
+}
+
+#[test]
+fn default_generator_uses_png_when_one_mip_profile_is_reconstructible() {
+    let workspace = TestDirectory::new("png-delta");
+    let base = synthetic_bntx();
+    let mut modified = base.clone();
+    let image = test_image(8, 8, 29);
+    add_texture(
+        &mut modified,
+        "new",
+        &image,
+        AddTextureOptions {
+            profile: Some(TextureProfile::Format(NewTextureFormat::Bc7Unorm)),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut unsupported = modified.textures[0].clone();
+    unsupported.name = "bc1".into();
+    unsupported.info.format = ImageFormat::from_raw(0x1a06);
+    modified.textures.push(unsupported);
+    let base_path = workspace.path().join("base.bntx");
+    let modified_path = workspace.path().join("modified.bntx");
+    fs::write(&base_path, base.to_bytes().unwrap()).unwrap();
+    fs::write(&modified_path, modified.to_bytes().unwrap()).unwrap();
+    let patch_dir = workspace.path().join("delta");
+    let summary = create_bntx_patch(
+        &base_path,
+        &modified_path,
+        &patch_dir,
+        PatchSourceFormat::Png,
+    )
+    .unwrap();
+    assert_eq!(summary.png_fallbacks, ["bc1"]);
+    let manifest = fs::read_to_string(patch_dir.join("bntx-patch.json")).unwrap();
+    assert!(manifest.contains("\"source_format\": \"png\""));
+    assert!(manifest.contains("\"source_format\": \"bin\""));
+    let output = workspace.path().join("out.bntx");
+    patch_bntx_file(&base_path, &patch_dir, &output).unwrap();
+    let patched = Bntx::from_bytes(&fs::read(output).unwrap()).unwrap();
+    assert_eq!(
+        &patched.textures[..base.textures.len()],
+        base.textures.as_slice()
+    );
+    assert_eq!(
+        patched.textures.last().unwrap(),
+        modified.textures.last().unwrap()
+    );
+    assert_eq!(
+        patched.textures[base.textures.len()].info,
+        modified.textures[base.textures.len()].info
+    );
+    assert_eq!(patched.textures[base.textures.len()].mip_offsets.len(), 1);
+}
 
 #[test]
 fn png_edits_use_one_mip_level() {

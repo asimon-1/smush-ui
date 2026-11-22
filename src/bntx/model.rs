@@ -52,6 +52,7 @@ pub struct Texture {
 
 /// Semantic BRTI fields which are not file offsets or derived block bookkeeping.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct TextureInfo {
     pub flags: u8,
     pub image_dimension: TextureDimension,
@@ -66,7 +67,6 @@ pub struct TextureInfo {
     pub array_count: u32,
     pub texture_layout: TextureLayout,
     pub texture_layout2: u32,
-    pub reserved: [u8; 20],
     pub image_alignment: u32,
     pub channels: [ChannelSelector; 4],
     pub surface_dimension: SurfaceDimension,

@@ -200,7 +200,7 @@ pub fn add_texture(
     Ok(())
 }
 
-fn build_texture(
+pub(crate) fn build_texture(
     bntx: &Bntx,
     name: &str,
     image: &RgbaImage,
@@ -311,7 +311,6 @@ fn canonical_info(format: NewTextureFormat) -> TextureInfo {
         array_count: 1,
         texture_layout: TextureLayout::from_raw(0),
         texture_layout2: 0x0001_0007,
-        reserved: [0; 20],
         image_alignment: 0x200,
         channels: format.channels(),
         surface_dimension: SurfaceDimension::TwoD,

@@ -122,8 +122,8 @@ pub(crate) struct TextureInfoDisk {
     pub depth: u32,
     pub array_count: u32,
     pub texture_layout: u32,
+    #[brw(pad_after = 20)]
     pub texture_layout2: u32,
-    pub reserved: [u8; 20],
     pub image_size: u32,
     pub image_alignment: u32,
     pub channel_red: u8,

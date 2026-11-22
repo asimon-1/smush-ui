@@ -703,7 +703,6 @@ fn texture_info(disk: &TextureInfoDisk) -> TextureInfo {
         array_count: disk.array_count,
         texture_layout: TextureLayout::from_raw(disk.texture_layout),
         texture_layout2: disk.texture_layout2,
-        reserved: disk.reserved,
         image_alignment: disk.image_alignment,
         channels: [
             ChannelSelector::from_raw(disk.channel_red),
