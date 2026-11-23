@@ -44,28 +44,95 @@ fn help_lists_and_describes_every_command() {
     let output = cli_command().arg("--help").output().unwrap();
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for command in [
-        "to-json",
-        "from-json",
-        "unpack-arc",
-        "pack-arc",
-        "add-arc-file",
-    ] {
-        assert!(
-            stdout.contains(command),
-            "missing {command:?} in:\n{stdout}"
-        );
-
-        let output = cli_command().args([command, "--help"]).output().unwrap();
+    let tree = stdout.split_once("Command tree:\n").unwrap().1;
+    let commands = [
+        ("bflyt", "to-json", "<INPUT> <OUTPUT>"),
+        ("bflyt", "from-json", "<INPUT> <OUTPUT>"),
+        ("arc", "unpack", "<INPUT> <OUTPUT_DIRECTORY>"),
+        ("arc", "pack", "<INPUT_DIRECTORY> <OUTPUT>"),
+        (
+            "arc",
+            "add-file",
+            "<INPUT> <SOURCE_FILE> <ARCHIVE_PATH> <OUTPUT>",
+        ),
+        ("arc", "patch", "<INPUT> <MANIFEST> <OUTPUT>"),
+        ("arc", "list", "<INPUT>"),
+        ("arc", "diff", "<BEFORE> <AFTER>"),
+        ("bntx", "unpack", "<INPUT> <OUTPUT_DIRECTORY>"),
+        ("bntx", "pack", "<INPUT_DIRECTORY> <OUTPUT>"),
+        (
+            "bntx",
+            "add-texture",
+            "<INPUT> <SOURCE_PNG> <TEXTURE_NAME> <OUTPUT>",
+        ),
+        ("bntx", "patch", "<INPUT> <PATCH_DIRECTORY> <OUTPUT>"),
+        (
+            "bntx",
+            "create-patch",
+            "<BASE> <MODIFIED> <PATCH_DIRECTORY>",
+        ),
+        ("bntx", "create", "<INPUT_PNG_DIRECTORY> <OUTPUT>"),
+        ("bntx", "list", "<INPUT>"),
+        ("bntx", "diff", "<BEFORE> <AFTER>"),
+    ];
+    for group in ["bflyt", "arc", "bntx"] {
+        assert!(stdout.contains(group), "missing {group:?} in:\n{stdout}");
+        let group_line = format!("  {group}");
+        let group_tree: Vec<_> = tree
+            .lines()
+            .skip_while(|line| *line != group_line)
+            .skip(1)
+            .take_while(|line| line.starts_with("    "))
+            .collect();
+        let output = cli_command().args([group, "--help"]).output().unwrap();
         assert_success(&output);
-        assert!(String::from_utf8_lossy(&output.stdout).contains("Usage:"));
+        let group_help = String::from_utf8_lossy(&output.stdout);
+        assert!(group_help.contains("<COMMAND>"));
+        let required_arguments = group_help.split_once("Required arguments:\n").unwrap().1;
+        for &(_, command, args) in commands.iter().filter(|&&(kind, _, _)| kind == group) {
+            assert!(
+                group_tree.contains(&format!("    {command}").as_str()),
+                "missing {group} {command} in command tree:\n{tree}"
+            );
+            assert!(
+                required_arguments
+                    .lines()
+                    .any(|line| line == format!("  {command} {args}")),
+                "missing arguments for {group} {command}:\n{group_help}"
+            );
+        }
     }
 
-    let output = cli_command().arg("unpack-arc").output().unwrap();
+    for (group, command, args) in commands {
+        let output = cli_command()
+            .args([group, command, "--help"])
+            .output()
+            .unwrap();
+        assert_success(&output);
+        let help = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            help.contains("Usage:"),
+            "missing usage for {group} {command}"
+        );
+        let usage = help
+            .lines()
+            .find(|line| line.starts_with("Usage:"))
+            .unwrap();
+        assert!(
+            usage.contains(args),
+            "group help disagrees with {group} {command} usage:\n{help}"
+        );
+        assert!(
+            help.contains(&format!("smush-ui {group} {command}")),
+            "missing example for {group} {command}:\n{help}"
+        );
+    }
+
+    let output = cli_command().args(["arc", "unpack"]).output().unwrap();
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Usage:"));
-    assert!(stderr.contains("unpack-arc"));
+    assert!(stderr.contains("arc unpack"));
 }
 
 #[test]
@@ -84,7 +151,7 @@ fn unpacks_and_repacks_an_archive() {
     fs::write(&input, &original).unwrap();
 
     let output = cli_command()
-        .arg("unpack-arc")
+        .args(["arc", "unpack"])
         .arg(&input)
         .arg(&unpacked)
         .output()
@@ -104,7 +171,7 @@ fn unpacks_and_repacks_an_archive() {
     );
 
     let output = cli_command()
-        .arg("pack-arc")
+        .args(["arc", "pack"])
         .arg(&unpacked)
         .arg(&repacked)
         .output()
@@ -121,7 +188,7 @@ fn unpack_rejects_malformed_archives_with_the_input_path() {
     fs::write(&input, b"not a SARC archive").unwrap();
 
     let output = cli_command()
-        .arg("unpack-arc")
+        .args(["arc", "unpack"])
         .arg(&input)
         .arg(&output_directory)
         .output()
@@ -142,7 +209,7 @@ fn unpack_rejects_unsafe_entry_paths_with_the_entry_name() {
     fs::write(&input, bytes).unwrap();
 
     let output = cli_command()
-        .arg("unpack-arc")
+        .args(["arc", "unpack"])
         .arg(&input)
         .arg(&output_directory)
         .output()
@@ -166,7 +233,7 @@ fn unpack_does_not_overwrite_an_existing_output_file() {
     fs::write(&existing, b"existing").unwrap();
 
     let output = cli_command()
-        .arg("unpack-arc")
+        .args(["arc", "unpack"])
         .arg(&input)
         .arg(&output_directory)
         .output()
@@ -271,7 +338,7 @@ fn replaces_an_entry_atomically_in_place() {
 fn add_command(input: &Path, source: &Path, archive_path: &str, output: &Path) -> Command {
     let mut command = cli_command();
     command
-        .arg("add-arc-file")
+        .args(["arc", "add-file"])
         .arg(input)
         .arg(source)
         .arg(archive_path)

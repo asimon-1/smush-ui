@@ -16,16 +16,27 @@ use std::{
 
 #[test]
 fn help_lists_bntx_commands_and_flags() {
-    let output = cli_command().arg("--help").output().unwrap();
+    let output = cli_command().args(["bntx", "--help"]).output().unwrap();
     assert_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("unpack-bntx"));
-    assert!(stdout.contains("pack-bntx"));
-    assert!(stdout.contains("add-bntx-texture"));
-    assert!(stdout.contains("create-bntx"));
+    for command in [
+        "unpack",
+        "pack",
+        "add-texture",
+        "patch",
+        "create-patch",
+        "create",
+        "list",
+        "diff",
+    ] {
+        assert!(
+            stdout.contains(command),
+            "missing {command:?} in:\n{stdout}"
+        );
+    }
 
     let output = cli_command()
-        .args(["unpack-bntx", "--help"])
+        .args(["bntx", "unpack", "--help"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -34,14 +45,14 @@ fn help_lists_bntx_commands_and_flags() {
     assert!(stdout.contains("--raw-channels"));
 
     let output = cli_command()
-        .args(["pack-bntx", "--help"])
+        .args(["bntx", "pack", "--help"])
         .output()
         .unwrap();
     assert_success(&output);
     assert!(String::from_utf8_lossy(&output.stdout).contains("--from-png"));
 
     let output = cli_command()
-        .args(["add-bntx-texture", "--help"])
+        .args(["bntx", "add-texture", "--help"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -51,7 +62,7 @@ fn help_lists_bntx_commands_and_flags() {
     assert!(stdout.contains("--replace"));
 
     let output = cli_command()
-        .args(["create-bntx", "--help"])
+        .args(["bntx", "create", "--help"])
         .output()
         .unwrap();
     assert_success(&output);
@@ -73,7 +84,7 @@ fn adds_to_separate_output_and_replaces_in_place() {
 
     assert_success(
         &cli_command()
-            .arg("add-bntx-texture")
+            .args(["bntx", "add-texture"])
             .arg(&input)
             .arg(&source)
             .arg("templated")
@@ -98,7 +109,7 @@ fn adds_to_separate_output_and_replaces_in_place() {
     fs::write(&source, write_png(&test_image(8, 6, 9)).unwrap()).unwrap();
     assert_success(
         &cli_command()
-            .arg("add-bntx-texture")
+            .args(["bntx", "add-texture"])
             .arg(&separate)
             .arg(&source)
             .arg("same/name")
@@ -138,7 +149,7 @@ fn add_format_and_default_select_the_requested_profiles() {
 
     assert_success(
         &cli_command()
-            .arg("add-bntx-texture")
+            .args(["bntx", "add-texture"])
             .arg(&input)
             .arg(&source)
             .arg("bc1")
@@ -160,7 +171,7 @@ fn add_format_and_default_select_the_requested_profiles() {
 
     assert_success(
         &cli_command()
-            .arg("add-bntx-texture")
+            .args(["bntx", "add-texture"])
             .arg(&input)
             .arg(&source)
             .arg("bc4")
@@ -182,7 +193,7 @@ fn add_format_and_default_select_the_requested_profiles() {
 
     assert_success(
         &cli_command()
-            .arg("add-bntx-texture")
+            .args(["bntx", "add-texture"])
             .arg(&input)
             .arg(&source)
             .arg("default")
@@ -228,7 +239,7 @@ fn creates_one_or_many_textures_with_names_formats_and_sorted_order() {
     let single_output = workspace.path().join("derived.bntx");
     assert_success(
         &cli_command()
-            .arg("create-bntx")
+            .args(["bntx", "create"])
             .arg(&single_directory)
             .arg(&single_output)
             .output()
@@ -243,7 +254,7 @@ fn creates_one_or_many_textures_with_names_formats_and_sorted_order() {
     let many_output = workspace.path().join("many.bntx");
     assert_success(
         &cli_command()
-            .arg("create-bntx")
+            .args(["bntx", "create"])
             .arg(&many_directory)
             .arg(&many_output)
             .args(["--name", "explicit", "--format", "bc5-unorm"])
@@ -282,7 +293,7 @@ fn add_and_create_failures_preserve_existing_destinations() {
     ] {
         fs::write(&output, b"preserved").unwrap();
         let result = cli_command()
-            .arg("add-bntx-texture")
+            .args(["bntx", "add-texture"])
             .arg(&input)
             .arg(&source)
             .arg(arguments[0])
@@ -304,7 +315,7 @@ fn add_and_create_failures_preserve_existing_destinations() {
     fs::write(&source, b"not a PNG").unwrap();
     fs::write(&output, b"preserved").unwrap();
     let result = cli_command()
-        .arg("add-bntx-texture")
+        .args(["bntx", "add-texture"])
         .arg(&input)
         .arg(&source)
         .arg("new")
@@ -317,7 +328,7 @@ fn add_and_create_failures_preserve_existing_destinations() {
     let not_directory = workspace.path().join("not-directory");
     fs::write(&not_directory, b"ordinary file").unwrap();
     let result = cli_command()
-        .arg("create-bntx")
+        .args(["bntx", "create"])
         .arg(&not_directory)
         .arg(&output)
         .output()
@@ -326,7 +337,7 @@ fn add_and_create_failures_preserve_existing_destinations() {
     assert_eq!(fs::read(&output).unwrap(), b"preserved");
 
     let result = cli_command()
-        .arg("add-bntx-texture")
+        .args(["bntx", "add-texture"])
         .arg(&input)
         .arg(&source)
         .arg("new")
@@ -354,7 +365,7 @@ fn create_rejects_symbolic_links_without_replacing_the_output() {
 
     if create_directory_symlink(&real_directory, &linked_directory).is_ok() {
         let result = cli_command()
-            .arg("create-bntx")
+            .args(["bntx", "create"])
             .arg(&linked_directory)
             .arg(&output)
             .output()
@@ -366,7 +377,7 @@ fn create_rejects_symbolic_links_without_replacing_the_output() {
     let linked_png = real_directory.join("linked.png");
     if create_file_symlink(&real_directory.join("texture.png"), &linked_png).is_ok() {
         let result = cli_command()
-            .arg("create-bntx")
+            .args(["bntx", "create"])
             .arg(&real_directory)
             .arg(&output)
             .output()
@@ -402,7 +413,7 @@ fn create_rejects_duplicate_stems_and_non_utf8_names() {
         (&invalid_directory, "not valid UTF-8"),
     ] {
         let result = cli_command()
-            .arg("create-bntx")
+            .args(["bntx", "create"])
             .arg(directory)
             .arg(&output)
             .output()
@@ -422,7 +433,7 @@ fn create_rejects_duplicate_stems_and_non_utf8_names() {
     .unwrap();
     assert_success(
         &cli_command()
-            .arg("create-bntx")
+            .args(["bntx", "create"])
             .arg(&ignored_directory)
             .arg(&ignored_output)
             .output()
@@ -444,7 +455,7 @@ fn unpacks_and_losslessly_repacks_a_bntx() {
 
     assert_success(
         &cli_command()
-            .arg("unpack-bntx")
+            .args(["bntx", "unpack"])
             .arg(&input)
             .arg(&bundle)
             .output()
@@ -458,7 +469,7 @@ fn unpacks_and_losslessly_repacks_a_bntx() {
 
     assert_success(
         &cli_command()
-            .arg("pack-bntx")
+            .args(["bntx", "pack"])
             .arg(&bundle)
             .arg(&output)
             .output()
@@ -476,7 +487,7 @@ fn unpack_flags_control_preview_creation_and_channels() {
     let no_preview = workspace.path().join("no-preview");
     assert_success(
         &cli_command()
-            .arg("unpack-bntx")
+            .args(["bntx", "unpack"])
             .arg(&input)
             .arg(&no_preview)
             .arg("--no-preview")
@@ -489,7 +500,7 @@ fn unpack_flags_control_preview_creation_and_channels() {
     }));
     let no_preview_output = workspace.path().join("no-preview.bntx");
     let result = cli_command()
-        .arg("pack-bntx")
+        .args(["bntx", "pack"])
         .arg(&no_preview)
         .arg(&no_preview_output)
         .arg("--from-png")
@@ -501,7 +512,7 @@ fn unpack_flags_control_preview_creation_and_channels() {
     let raw_channels = workspace.path().join("raw-channels");
     assert_success(
         &cli_command()
-            .arg("unpack-bntx")
+            .args(["bntx", "unpack"])
             .arg(&input)
             .arg(&raw_channels)
             .arg("--raw-channels")
@@ -526,7 +537,7 @@ fn from_png_reencodes_edits_and_failures_preserve_the_output() {
 
     assert_success(
         &cli_command()
-            .arg("unpack-bntx")
+            .args(["bntx", "unpack"])
             .arg(&input)
             .arg(&bundle)
             .output()
@@ -543,7 +554,7 @@ fn from_png_reencodes_edits_and_failures_preserve_the_output() {
 
     assert_success(
         &cli_command()
-            .arg("pack-bntx")
+            .args(["bntx", "pack"])
             .arg(&bundle)
             .arg(&output)
             .arg("--from-png")
@@ -566,7 +577,7 @@ fn from_png_reencodes_edits_and_failures_preserve_the_output() {
     .unwrap();
     fs::write(&output, b"preserved").unwrap();
     let result = cli_command()
-        .arg("pack-bntx")
+        .args(["bntx", "pack"])
         .arg(&bundle)
         .arg(&output)
         .arg("--from-png")
@@ -584,7 +595,7 @@ fn malformed_input_and_output_conflicts_are_reported_without_partial_outputs() {
     fs::write(&malformed, b"not a BNTX").unwrap();
 
     let result = cli_command()
-        .arg("unpack-bntx")
+        .args(["bntx", "unpack"])
         .arg(&malformed)
         .arg(&malformed_output)
         .output()
@@ -600,7 +611,7 @@ fn malformed_input_and_output_conflicts_are_reported_without_partial_outputs() {
     fs::write(&existing, b"existing").unwrap();
 
     let result = cli_command()
-        .arg("unpack-bntx")
+        .args(["bntx", "unpack"])
         .arg(&input)
         .arg(&conflict)
         .output()

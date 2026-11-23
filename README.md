@@ -47,40 +47,74 @@ cargo test
 Usage: smush-ui.exe <COMMAND>
 
 Commands:
-  to-json           Deserialize a little-endian BFLYT file to pretty-printed JSON
-  from-json         Serialize JSON to a little-endian BFLYT file
-  unpack-arc        Extract the named files in a SARC archive
-  pack-arc          Pack a directory tree into a SARC archive
-  add-arc-file      Insert an opaque file into an existing SARC archive
-  list-arc          List files stored in a SARC archive
-  diff-arc          Compare the files stored in two SARC archives
-  unpack-bntx       Extract a BNTX container to a lossless editable bundle
-  pack-bntx         Rebuild a BNTX container from a lossless bundle
-  add-bntx-texture  Add or replace one PNG texture in a BNTX container
-  create-bntx       Create a new BNTX container from one directory of PNG files
-  list-bntx         List textures stored in a BNTX container
-  diff-bntx         Compare textures stored in two BNTX containers
+  bflyt  Read and write BFLYT layouts
+  arc    Read and write SARC archives
+  bntx   Read and write BNTX texture containers
+  help   Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help  Print help
+
+Command tree:
+  bflyt
+    to-json
+    from-json
+  arc
+    unpack
+    pack
+    add-file
+    patch
+    list
+    diff
+  bntx
+    unpack
+    pack
+    add-texture
+    patch
+    create-patch
+    create
+    list
+    diff
+
+Run 'smush-ui <FILETYPE> --help' for required arguments, or 'smush-ui <FILETYPE> <COMMAND> --help' for options and examples.
 ```
 
-Run `smush-ui.exe <COMMAND> --help` to see a command's arguments and options. The examples below
-use `cargo run --` to run a development build.
+Run `smush-ui.exe <FILETYPE> --help` to see the required arguments for that file type's commands.
+Run `smush-ui.exe <FILETYPE> <COMMAND> --help` for options and an example. The examples below use
+`cargo run --` to run a development build.
 Commands that write files print nothing on success. The list and diff commands print to stdout.
+
+| Subcommand | Example | Purpose |
+| --- | --- | --- |
+| `bflyt to-json` | `smush-ui.exe bflyt to-json layout.bflyt layout.json` | Export a layout as JSON. |
+| `bflyt from-json` | `smush-ui.exe bflyt from-json layout.json rebuilt.bflyt` | Write a layout from JSON. |
+| `arc unpack` | `smush-ui.exe arc unpack archive.arc archive-files` | Extract archive files. |
+| `arc pack` | `smush-ui.exe arc pack archive-files rebuilt.arc` | Build an archive from a directory. |
+| `arc add-file` | `smush-ui.exe arc add-file archive.arc asset.bin assets/asset.bin updated.arc` | Insert a file at an archive path. |
+| `arc patch` | `smush-ui.exe arc patch archive.arc patch.json updated.arc` | Apply an archive patch manifest. |
+| `arc list` | `smush-ui.exe arc list archive.arc` | List archive entries. |
+| `arc diff` | `smush-ui.exe arc diff original.arc modified.arc` | Compare archive entries. |
+| `bntx unpack` | `smush-ui.exe bntx unpack textures.bntx texture-bundle` | Extract a texture bundle. |
+| `bntx pack` | `smush-ui.exe bntx pack texture-bundle rebuilt.bntx` | Rebuild a texture bundle. |
+| `bntx add-texture` | `smush-ui.exe bntx add-texture textures.bntx image.png new_texture updated.bntx` | Insert or replace a PNG texture. |
+| `bntx patch` | `smush-ui.exe bntx patch original.bntx delta updated.bntx` | Apply a texture patch directory. |
+| `bntx create-patch` | `smush-ui.exe bntx create-patch original.bntx modified.bntx delta` | Generate a texture patch directory. |
+| `bntx create` | `smush-ui.exe bntx create images textures.bntx` | Build a container from PNG files. |
+| `bntx list` | `smush-ui.exe bntx list textures.bntx` | List textures. |
+| `bntx diff` | `smush-ui.exe bntx diff original.bntx modified.bntx` | Compare textures. |
 
 ### BFLYT layouts
 
 Convert a BFLYT file to formatted JSON:
 
 ```sh
-cargo run -- to-json layout.bflyt layout.json
+cargo run -- bflyt to-json layout.bflyt layout.json
 ```
 
 Convert edited JSON back to BFLYT:
 
 ```sh
-cargo run -- from-json layout.json rebuilt-layout.bflyt
+cargo run -- bflyt from-json layout.json rebuilt-layout.bflyt
 ```
 
 ### SARC archives
@@ -88,53 +122,73 @@ cargo run -- from-json layout.json rebuilt-layout.bflyt
 Unpack a raw SARC archive into a directory:
 
 ```sh
-cargo run -- unpack-arc archive.arc archive-files
+cargo run -- arc unpack archive.arc archive-files
 ```
 
 Pack a directory tree into a raw SARC archive:
 
 ```sh
-cargo run -- pack-arc archive-files rebuilt.arc
+cargo run -- arc pack archive-files rebuilt.arc
 ```
 
 Add a file under a chosen archive path, leaving the input archive unchanged:
 
 ```sh
-cargo run -- add-arc-file archive.arc asset.bin assets/asset.bin updated.arc
+cargo run -- arc add-file archive.arc asset.bin assets/asset.bin updated.arc
 ```
 
 Pass `--replace` to replace an existing entry with the same archive path. The input and output
 paths may be identical for this command; replacement is atomic.
 
+Apply several archive edits from a JSON or JSONC manifest:
+
+```sh
+cargo run -- arc patch archive.arc patch.json updated.arc
+```
+
+For example, a `patch.json` beside `asset.bin` can insert that file:
+
+```json
+{
+  "schema_version": 1,
+  "upsert": [
+    {"archive_path": "assets/asset.bin", "kind": "file", "source": "asset.bin"}
+  ]
+}
+```
+
+Source paths are relative to the manifest. `upsert` also accepts `bflyt-json` and `bntx-bundle`
+sources. Use `remove` to delete an entry or `patch` to apply a BNTX patch directory to an entry.
+
 Inspect an archive without extracting it, or compare two archives by entry identity and SHA-256:
 
 ```sh
-cargo run -- list-arc archive.arc
-cargo run -- diff-arc original.arc modified.arc
+cargo run -- arc list archive.arc
+cargo run -- arc diff original.arc modified.arc
 ```
 
-For an archive containing `a.bin` with the bytes `abc`, `list-arc` prints:
+For an archive containing `a.bin` with the bytes `abc`, `arc list` prints:
 
 ```text
 entries: 1
 [0] a.bin size=3 sha256=ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad kind=opaque extension=bin
 ```
 
-If `a.bin` changes from `01` to `02`, `diff-arc` prints:
+If `a.bin` changes from `01` to `02`, `arc diff` prints:
 
 ```text
 entries: 1 -> 1; added=0 removed=0 changed=1
 ~ a.bin size=1->1 sha256=4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a->dbc1b4c900ffe48d575b5da5c638040125f65db0fe3e24494b76ea986457d986
 ```
 
-Pass `--format json` for versioned JSON output in a stable format for CI. `diff-arc` accepts
+Pass `--format json` for versioned JSON output in a stable format for CI. `arc diff` accepts
 `--expand-bflyt` and `--expand-bntx` to show field or texture changes when both payloads parse as
 the selected format. Use `--check` with either diff command to return status `3` when files differ.
 Parse and I/O failures return status `1`.
 
 SARC entries are extracted and packed as raw files. The tool does not decode embedded BFLYT,
 BNTX, BFLAN, or other entry payloads during mutating archive operations. Only the opt-in
-`diff-arc` expansion flags parse embedded BFLYT or BNTX payloads. If parsing fails, the command
+`arc diff` expansion flags parse embedded BFLYT or BNTX payloads. If parsing fails, the command
 reports the outer payload difference. Decompress zstd `.zs` files and Yaz0 files before using these
 commands.
 
@@ -147,18 +201,18 @@ absolute `0x1000` boundaries.
 Inspect a BNTX container or compare two containers by texture name:
 
 ```sh
-cargo run -- list-bntx textures.bntx
-cargo run -- diff-bntx original.bntx modified.bntx
+cargo run -- bntx list textures.bntx
+cargo run -- bntx diff original.bntx modified.bntx
 ```
 
-For a container with one 9 by 7 BC4 texture, `list-bntx` prints:
+For a container with one 9 by 7 BC4 texture, `bntx list` prints:
 
 ```text
 textures: 1
 [0] example_texture 9x7x1 format=0x00001d01 Bc4/Unorm mips=1 image_size=<bytes> sha256=<digest>
 ```
 
-If one image changes in a four-texture container, `diff-bntx` prints:
+If one image changes in a four-texture container, `bntx diff` prints:
 
 ```text
 textures: 4 -> 4; added=0 removed=0 changed=1 unchanged=3
@@ -166,12 +220,12 @@ textures: 4 -> 4; added=0 removed=0 changed=1 unchanged=3
 ```
 
 The diff reports image, metadata, mip layout, user data, and texture order changes separately. Both
-commands accept `--format json`. `diff-bntx --check` uses the status described above.
+commands accept `--format json`. `bntx diff --check` uses the status described above.
 
 Unpack a BNTX into a self-contained editable bundle:
 
 ```sh
-cargo run -- unpack-bntx textures.bntx texture-bundle
+cargo run -- bntx unpack textures.bntx texture-bundle
 ```
 
 The bundle has this layout:
@@ -212,8 +266,8 @@ This affects normal usage as follows:
 Repack a bundle losslessly, or explicitly encode changed PNG previews:
 
 ```sh
-cargo run -- pack-bntx texture-bundle rebuilt.bntx
-cargo run -- pack-bntx texture-bundle rebuilt.bntx --from-png
+cargo run -- bntx pack texture-bundle rebuilt.bntx
+cargo run -- bntx pack texture-bundle rebuilt.bntx --from-png
 ```
 
 With `--from-png`, edited previews must keep their original dimensions. The tool rebuilds additional
@@ -225,7 +279,7 @@ color channels are used. Use `--like` to copy that profile from an existing text
 and replacements generate one image level. The new PNG supplies the name, dimensions, and visible image:
 
 ```sh
-cargo run -- add-bntx-texture textures.bntx image.png new_texture updated.bntx \
+cargo run -- bntx add-texture textures.bntx image.png new_texture updated.bntx \
   --like template_texture
 ```
 
@@ -233,7 +287,7 @@ Use this when a new texture needs the same storage profile as an existing textur
 choose a compression format:
 
 ```sh
-cargo run -- add-bntx-texture textures.bntx image.png new_texture updated.bntx \
+cargo run -- bntx add-texture textures.bntx image.png new_texture updated.bntx \
   --format bc7-srgb
 ```
 
@@ -243,10 +297,22 @@ Duplicate texture names are rejected unless `--replace` is present. Replacement 
 `--like` or `--format` preserves the existing texture's storage profile. The input and output
 paths may be identical for replacement.
 
+Generate a texture patch directory from two containers, then apply it:
+
+```sh
+cargo run -- bntx create-patch original.bntx modified.bntx delta
+cargo run -- bntx patch original.bntx delta updated.bntx
+```
+
+`create-patch` writes `bntx-patch.json` and its texture sources into `delta`. It uses PNG sources
+when possible and binary sources for textures that cannot use PNG. Pass `--source-format bin` to
+store all changed textures as binary sources. `bntx patch` also accepts a directory containing
+`bntx-patch.jsonc`.
+
 Create a new container from the regular PNG files directly inside one directory:
 
 ```sh
-cargo run -- create-bntx images textures.bntx \
+cargo run -- bntx create images textures.bntx \
   --name texture_container --format bc7-unorm
 ```
 

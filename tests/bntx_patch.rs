@@ -515,7 +515,7 @@ fn batch_of_more_than_one_hundred_textures_round_trips() {
     .unwrap();
     patch_bntx_file(&input, &directory, &output).unwrap();
     let listed = Command::new(env!("CARGO_BIN_EXE_smush-ui"))
-        .args(["list-bntx", output.to_str().unwrap(), "--format", "json"])
+        .args(["bntx", "list", output.to_str().unwrap(), "--format", "json"])
         .output()
         .unwrap();
     assert!(listed.status.success());
@@ -528,7 +528,8 @@ fn batch_of_more_than_one_hundred_textures_round_trips() {
     );
     let diffed = Command::new(env!("CARGO_BIN_EXE_smush-ui"))
         .args([
-            "diff-bntx",
+            "bntx",
+            "diff",
             input.to_str().unwrap(),
             output.to_str().unwrap(),
             "--format",
@@ -642,7 +643,8 @@ fn patch_directory_is_atomic_and_accepts_jsonc() {
     let cli_output = workspace.path().join("cli-output.bntx");
     let cli = Command::new(env!("CARGO_BIN_EXE_smush-ui"))
         .args([
-            "patch-bntx",
+            "bntx",
+            "patch",
             input.to_str().unwrap(),
             patch_dir.to_str().unwrap(),
             cli_output.to_str().unwrap(),
@@ -689,14 +691,14 @@ fn patch_directory_is_atomic_and_accepts_jsonc() {
 #[test]
 fn cli_exposes_patch_and_add_commands() {
     let help = Command::new(env!("CARGO_BIN_EXE_smush-ui"))
-        .arg("add-bntx-texture")
+        .args(["bntx", "add-texture"])
         .arg("--help")
         .output()
         .unwrap();
     assert!(help.status.success());
     assert!(!String::from_utf8_lossy(&help.stdout).contains("--mip-count"));
     let help = Command::new(env!("CARGO_BIN_EXE_smush-ui"))
-        .arg("patch-bntx")
+        .args(["bntx", "patch"])
         .arg("--help")
         .output()
         .unwrap();
@@ -710,7 +712,8 @@ fn cli_exposes_patch_and_add_commands() {
     fs::write(&png, write_png(&test_image(64, 64, 4)).unwrap()).unwrap();
     let result = Command::new(env!("CARGO_BIN_EXE_smush-ui"))
         .args([
-            "add-bntx-texture",
+            "bntx",
+            "add-texture",
             input.to_str().unwrap(),
             png.to_str().unwrap(),
             "added",

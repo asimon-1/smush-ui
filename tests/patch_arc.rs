@@ -124,7 +124,7 @@ fn patches_raw_and_bflyt_entries_in_one_atomic_command() {
 
     let cli = Command::new(env!("CARGO_BIN_EXE_smush-ui"))
         .current_dir(workspace.path())
-        .arg("patch-arc")
+        .args(["arc", "patch"])
         .arg(&input)
         .arg(patch_dir.join("patch.json"))
         .arg(&second)

@@ -50,8 +50,8 @@ fn list_arc_has_exact_stable_json_and_text_output() {
     let entry = SarcEntry::new("a.bin", b"abc".to_vec());
     write_archive(&archive_path, SarcArchive::new(vec![entry.clone()]));
 
-    let first = cli(&["list-arc", path(&archive_path), "--format", "json"]);
-    let second = cli(&["list-arc", path(&archive_path), "--format", "json"]);
+    let first = cli(&["arc", "list", path(&archive_path), "--format", "json"]);
+    let second = cli(&["arc", "list", path(&archive_path), "--format", "json"]);
     assert_success(&first);
     assert_eq!(first.stdout, second.stdout);
     assert!(first.stdout.ends_with(b"\n"));
@@ -75,7 +75,7 @@ fn list_arc_has_exact_stable_json_and_text_output() {
         actual
     );
 
-    let text = cli(&["list-arc", path(&archive_path)]);
+    let text = cli(&["arc", "list", path(&archive_path)]);
     assert_success(&text);
     assert_eq!(
         format!(
@@ -103,7 +103,7 @@ fn diff_check_uses_status_three_and_parse_errors_remain_status_one() {
     );
     fs::write(&malformed, b"not a SARC").unwrap();
 
-    let ordinary = cli(&["diff-arc", path(&before), path(&after)]);
+    let ordinary = cli(&["arc", "diff", path(&before), path(&after)]);
     assert_success(&ordinary);
     assert_eq!(
         format!(
@@ -114,7 +114,14 @@ fn diff_check_uses_status_three_and_parse_errors_remain_status_one() {
         .as_bytes(),
         ordinary.stdout
     );
-    let json_arguments = ["diff-arc", path(&before), path(&after), "--format", "json"];
+    let json_arguments = [
+        "arc",
+        "diff",
+        path(&before),
+        path(&after),
+        "--format",
+        "json",
+    ];
     let first_json = cli(&json_arguments);
     let second_json = cli(&json_arguments);
     assert_success(&first_json);
@@ -140,14 +147,14 @@ fn diff_check_uses_status_three_and_parse_errors_remain_status_one() {
         }),
         serde_jsonc2::from_slice::<Value>(&first_json.stdout).unwrap()
     );
-    let checked = cli(&["diff-arc", path(&before), path(&after), "--check"]);
+    let checked = cli(&["arc", "diff", path(&before), path(&after), "--check"]);
     assert_eq!(Some(3), checked.status.code());
     assert!(checked.stderr.is_empty());
-    let identical_checked = cli(&["diff-arc", path(&before), path(&before), "--check"]);
+    let identical_checked = cli(&["arc", "diff", path(&before), path(&before), "--check"]);
     assert_success(&identical_checked);
     assert!(identical_checked.stderr.is_empty());
 
-    let failed = cli(&["list-arc", path(&malformed)]);
+    let failed = cli(&["arc", "list", path(&malformed)]);
     assert_eq!(Some(1), failed.status.code());
     assert!(String::from_utf8_lossy(&failed.stderr).contains("parse SARC input"));
 }
@@ -171,7 +178,7 @@ fn bntx_commands_list_diff_and_check_with_deterministic_json() {
     single.textures.truncate(1);
     fs::write(&single_path, single.to_bytes().unwrap()).unwrap();
 
-    let empty_list_arguments = ["list-bntx", path(&empty_path), "--format", "json"];
+    let empty_list_arguments = ["bntx", "list", path(&empty_path), "--format", "json"];
     let empty_list = cli(&empty_list_arguments);
     let repeated_empty_list = cli(&empty_list_arguments);
     assert_success(&empty_list);
@@ -183,11 +190,11 @@ fn bntx_commands_list_diff_and_check_with_deterministic_json() {
         }),
         serde_jsonc2::from_slice::<Value>(&empty_list.stdout).unwrap()
     );
-    let empty_list_text = cli(&["list-bntx", path(&empty_path)]);
+    let empty_list_text = cli(&["bntx", "list", path(&empty_path)]);
     assert_success(&empty_list_text);
     assert_eq!(b"textures: 0\n", empty_list_text.stdout.as_slice());
 
-    let single_list_arguments = ["list-bntx", path(&single_path), "--format", "json"];
+    let single_list_arguments = ["bntx", "list", path(&single_path), "--format", "json"];
     let single_list = cli(&single_list_arguments);
     let repeated_single_list = cli(&single_list_arguments);
     assert_success(&single_list);
@@ -219,7 +226,7 @@ fn bntx_commands_list_diff_and_check_with_deterministic_json() {
         }),
         serde_jsonc2::from_slice::<Value>(&single_list.stdout).unwrap()
     );
-    let single_list_text = cli(&["list-bntx", path(&single_path)]);
+    let single_list_text = cli(&["bntx", "list", path(&single_path)]);
     assert_success(&single_list_text);
     assert_eq!(
         format!(
@@ -232,7 +239,8 @@ fn bntx_commands_list_diff_and_check_with_deterministic_json() {
     );
 
     let empty_diff_arguments = [
-        "diff-bntx",
+        "bntx",
+        "diff",
         path(&empty_path),
         path(&empty_path),
         "--format",
@@ -256,15 +264,15 @@ fn bntx_commands_list_diff_and_check_with_deterministic_json() {
         }),
         serde_jsonc2::from_slice::<Value>(&empty_diff.stdout).unwrap()
     );
-    let empty_diff_text = cli(&["diff-bntx", path(&empty_path), path(&empty_path)]);
+    let empty_diff_text = cli(&["bntx", "diff", path(&empty_path), path(&empty_path)]);
     assert_success(&empty_diff_text);
     assert_eq!(
         b"textures: 0 -> 0; added=0 removed=0 changed=0 unchanged=0\n",
         empty_diff_text.stdout.as_slice()
     );
 
-    let first = cli(&["list-bntx", path(&before_path), "--format", "json"]);
-    let second = cli(&["list-bntx", path(&before_path), "--format", "json"]);
+    let first = cli(&["bntx", "list", path(&before_path), "--format", "json"]);
+    let second = cli(&["bntx", "list", path(&before_path), "--format", "json"]);
     assert_success(&first);
     assert_eq!(first.stdout, second.stdout);
     let list: Value = serde_jsonc2::from_slice(&first.stdout).unwrap();
@@ -276,7 +284,8 @@ fn bntx_commands_list_diff_and_check_with_deterministic_json() {
     );
 
     let difference = cli(&[
-        "diff-bntx",
+        "bntx",
+        "diff",
         path(&before_path),
         path(&after_path),
         "--format",
@@ -309,14 +318,15 @@ fn bntx_commands_list_diff_and_check_with_deterministic_json() {
         difference
     );
     let identical_checked = cli(&[
-        "diff-bntx",
+        "bntx",
+        "diff",
         path(&before_path),
         path(&before_path),
         "--check",
     ]);
     assert_success(&identical_checked);
     assert!(identical_checked.stderr.is_empty());
-    let difference_text = cli(&["diff-bntx", path(&before_path), path(&after_path)]);
+    let difference_text = cli(&["bntx", "diff", path(&before_path), path(&after_path)]);
     assert_success(&difference_text);
     assert_eq!(
         b"textures: 4 -> 4; added=0 removed=0 changed=1 unchanged=3\n~ same/name index=0->0 image=true metadata=false mips=false user_data=false order=false\n",
@@ -432,7 +442,7 @@ fn layout_bytes(names: &[&str]) -> Vec<u8> {
 }
 
 fn diff_arc_json(before: &Path, after: &Path, flags: &[&str]) -> Value {
-    let mut arguments = vec!["diff-arc", path(before), path(after), "--format", "json"];
+    let mut arguments = vec!["arc", "diff", path(before), path(after), "--format", "json"];
     arguments.extend_from_slice(flags);
     let output = cli(&arguments);
     assert_success(&output);
