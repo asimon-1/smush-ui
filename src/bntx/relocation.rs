@@ -54,6 +54,9 @@ fn canonical_table(layout: CanonicalLayout<'_>) -> BinResult<Option<Table>> {
     {
         return Ok(None);
     }
+    if texture_count > 1 && layout.dictionary + 0x10 - 0x28 > 256 * 8 {
+        return Ok(None);
+    }
 
     let count = u16::try_from(texture_count)
         .map_err(|_| bntx_error(0, "BNTX relocation array count exceeds 65535"))?;
