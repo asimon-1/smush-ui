@@ -213,6 +213,7 @@ pub fn derive_block_height_exponent(format: ImageFormat, width: u32, height: u32
 
 fn bytes_per_block(format: ImageFormat) -> BinResult<u8> {
     match (format.channel_format(), format.type_format()) {
+        (ChannelFormat::Bc1, TypeFormat::Unorm | TypeFormat::Srgb) => Ok(8),
         (ChannelFormat::Bc4, TypeFormat::Unorm) => Ok(8),
         (ChannelFormat::Bc5 | ChannelFormat::Bc7U, TypeFormat::Unorm)
         | (ChannelFormat::Bc7U, TypeFormat::Srgb) => Ok(16),

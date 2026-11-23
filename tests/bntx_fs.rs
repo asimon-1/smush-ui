@@ -1,7 +1,10 @@
 mod common;
 
 use common::{
-    bntx::{BC4_UNORM, BC5_UNORM, BC7_SRGB, BC7_UNORM, channels_for, synthetic_bntx, test_image},
+    bntx::{
+        BC1_SRGB, BC1_UNORM, BC4_UNORM, BC5_UNORM, BC7_SRGB, BC7_UNORM, channels_for,
+        synthetic_bntx, test_image,
+    },
     fs::TestDirectory,
 };
 use smush_ui::bntx::{
@@ -348,6 +351,8 @@ fn adds_each_explicit_format_with_corpus_defaults() {
     let original = bntx.clone();
     let image = test_image(9, 7, 11);
     for (index, (format, raw)) in [
+        (NewTextureFormat::Bc1Unorm, BC1_UNORM),
+        (NewTextureFormat::Bc1Srgb, BC1_SRGB),
         (NewTextureFormat::Bc4Unorm, BC4_UNORM),
         (NewTextureFormat::Bc5Unorm, BC5_UNORM),
         (NewTextureFormat::Bc7Unorm, BC7_UNORM),

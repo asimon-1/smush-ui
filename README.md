@@ -252,7 +252,7 @@ cargo run -- create-bntx images textures.bntx \
 
 Files are processed in deterministic filename order and their exact UTF-8 stems become texture
 names. `--name` defaults to the output filename stem, and `--format` defaults to `bc7-unorm`.
-The accepted formats are `bc4-unorm`, `bc5-unorm`, `bc7-unorm`, and `bc7-srgb`.
+The accepted formats are `bc1-unorm`, `bc1-srgb`, `bc4-unorm`, `bc5-unorm`, `bc7-unorm`, and `bc7-srgb`.
 
 Packing, adding, replacing, and creating finish serialization before replacing the destination.
 They replace it atomically, so a failure leaves an existing destination unchanged. Unpacking checks

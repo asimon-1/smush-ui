@@ -130,10 +130,33 @@ fn add_format_and_default_select_the_requested_profiles() {
     let workspace = TestDirectory::new("cli-add-formats");
     let input = workspace.path().join("input.bntx");
     let source = workspace.path().join("source.png");
+    let bc1_output = workspace.path().join("bc1.bntx");
     let bc4_output = workspace.path().join("bc4.bntx");
     let default_output = workspace.path().join("default.bntx");
     fs::write(&input, synthetic_bntx().to_bytes().unwrap()).unwrap();
     fs::write(&source, write_png(&test_image(7, 5, 4)).unwrap()).unwrap();
+
+    assert_success(
+        &cli_command()
+            .arg("add-bntx-texture")
+            .arg(&input)
+            .arg(&source)
+            .arg("bc1")
+            .arg(&bc1_output)
+            .args(["--format", "bc1-unorm"])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(
+        read_bntx(&bc1_output)
+            .textures
+            .last()
+            .unwrap()
+            .info
+            .format
+            .to_raw(),
+        0x1a01
+    );
 
     assert_success(
         &cli_command()

@@ -5,6 +5,8 @@ use smush_ui::bntx::{
     derive_block_height_exponent, encode_new_texture, encode_texture, read_png, write_png,
 };
 
+const BC1_UNORM: u32 = 0x1a01;
+const BC1_SRGB: u32 = 0x1a06;
 const BC4_UNORM: u32 = 0x1d01;
 const BC5_UNORM: u32 = 0x1e01;
 const BC7_UNORM: u32 = 0x2001;
@@ -24,7 +26,7 @@ fn channels_for(format: u32) -> [ChannelSelector; 4] {
             ChannelSelector::Red,
             ChannelSelector::Green,
         ],
-        BC7_UNORM | BC7_SRGB => [
+        BC1_UNORM | BC1_SRGB | BC7_UNORM | BC7_SRGB => [
             ChannelSelector::Red,
             ChannelSelector::Green,
             ChannelSelector::Blue,
@@ -102,6 +104,8 @@ fn container_with(texture: Texture) -> Bntx {
 #[test]
 fn block_linear_surfaces_round_trip_across_observed_geometries() {
     for (format, width, height, exponent) in [
+        (BC1_UNORM, 1, 1, 0),
+        (BC1_SRGB, 13, 11, 0),
         (BC4_UNORM, 1, 1, 0),
         (BC4_UNORM, 72, 64, 1),
         (BC5_UNORM, 7, 5, 0),
@@ -183,12 +187,14 @@ fn derives_new_and_mip_block_heights_at_gob_boundaries() {
 #[test]
 fn decodes_all_supported_formats_and_applies_channel_selectors() {
     for (format, expected_dimensions) in [
+        (BC1_UNORM, (13, 11)),
+        (BC1_SRGB, (15, 9)),
         (BC7_UNORM, (13, 11)),
         (BC7_SRGB, (15, 9)),
         (BC4_UNORM, (9, 7)),
         (BC5_UNORM, (7, 5)),
     ] {
-        let pattern = if matches!(format, BC7_UNORM | BC7_SRGB) {
+        let pattern = if matches!(format, BC1_UNORM | BC1_SRGB | BC7_UNORM | BC7_SRGB) {
             1
         } else {
             2
@@ -217,7 +223,7 @@ fn decodes_all_supported_formats_and_applies_channel_selectors() {
             match format {
                 BC4_UNORM => assert_eq!(resolved, &[255, 255, 255, raw[0]]),
                 BC5_UNORM => assert_eq!(resolved, &[raw[0], raw[0], raw[0], raw[1]]),
-                BC7_UNORM | BC7_SRGB => assert_eq!(resolved, raw),
+                BC1_UNORM | BC1_SRGB | BC7_UNORM | BC7_SRGB => assert_eq!(resolved, raw),
                 _ => unreachable!(),
             }
         }
@@ -232,6 +238,8 @@ fn decodes_all_supported_formats_and_applies_channel_selectors() {
 #[test]
 fn encodes_supported_formats_deterministically_and_round_trips_through_bntx() {
     for (format, width, height) in [
+        (BC1_UNORM, 5, 7),
+        (BC1_SRGB, 7, 5),
         (BC4_UNORM, 5, 7),
         (BC5_UNORM, 7, 5),
         (BC7_UNORM, 5, 7),
@@ -288,6 +296,98 @@ fn encodes_supported_formats_deterministically_and_round_trips_through_bntx() {
             assert_lossy_match(format, &source, &decoded);
         }
     }
+}
+
+#[test]
+fn bc1_encoding_preserves_punchthrough_alpha() {
+    let mut pixels = vec![255u8, 0, 0, 255].repeat(16);
+    pixels[3] = 0;
+    pixels[7] = 127;
+    pixels[11] = 128;
+    let image = RgbaImage::new(4, 4, pixels).unwrap();
+    let (texture, _) = encoded_texture(BC1_UNORM, 4, 4, 0);
+    let encoded = encode_texture(&texture, &image, ChannelMode::Resolved).unwrap();
+    let mut texture = texture;
+    texture.image_data = encoded.image_data;
+    texture.mip_offsets = encoded.mip_offsets;
+    let decoded = decode_texture(&texture, 0, ChannelMode::Resolved).unwrap();
+    assert_eq!(decoded.pixels[3], 0);
+    assert_eq!(decoded.pixels[7], 0);
+    assert!(
+        decoded
+            .pixels
+            .chunks_exact(4)
+            .skip(2)
+            .all(|pixel| pixel[3] == 255)
+    );
+}
+
+#[test]
+fn bc1_transparency_reaches_generated_mips() {
+    let mut pixels = vec![255u8, 0, 0, 255].repeat(64);
+    for y in 0..4 {
+        for x in 0..4 {
+            pixels[(y * 8 + x) * 4 + 3] = 0;
+        }
+    }
+    let image = RgbaImage::new(8, 8, pixels).unwrap();
+    let mut texture = texture_model(BC1_UNORM, 8, 8, 2);
+    let encoded = encode_texture(&texture, &image, ChannelMode::Resolved).unwrap();
+    texture.image_data = encoded.image_data;
+    texture.mip_offsets = encoded.mip_offsets;
+    for (level, width, transparent_size) in [(0, 8, 4), (1, 4, 2)] {
+        let decoded = decode_texture(&texture, level, ChannelMode::Resolved).unwrap();
+        for (index, pixel) in decoded.pixels.chunks_exact(4).enumerate() {
+            let x = index % width;
+            let y = index / width;
+            assert_eq!(
+                pixel[3],
+                if x < transparent_size && y < transparent_size {
+                    0
+                } else {
+                    255
+                }
+            );
+        }
+    }
+}
+
+#[test]
+fn bc1_transparent_blocks_keep_opaque_colors_usable() {
+    let mut image = patterned_image(BC1_UNORM, 8, 8, 2);
+    for (index, pixel) in image.pixels.chunks_exact_mut(4).enumerate() {
+        if index % 7 == 0 {
+            pixel[3] = 0;
+        }
+    }
+    let (mut texture, _) = encoded_texture(BC1_UNORM, 8, 8, 0);
+    let encoded = encode_texture(&texture, &image, ChannelMode::Resolved).unwrap();
+    texture.image_data = encoded.image_data;
+    texture.mip_offsets = encoded.mip_offsets;
+    let decoded = decode_texture(&texture, 0, ChannelMode::Resolved).unwrap();
+    let mut maximum = 0;
+    let mut total = 0u64;
+    let mut samples = 0u64;
+    for (expected, actual) in image
+        .pixels
+        .chunks_exact(4)
+        .zip(decoded.pixels.chunks_exact(4))
+    {
+        assert_eq!(actual[3], expected[3]);
+        if expected[3] == 255 {
+            for channel in 0..3 {
+                let difference = expected[channel].abs_diff(actual[channel]);
+                maximum = maximum.max(difference);
+                total += u64::from(difference);
+                samples += 1;
+            }
+        }
+    }
+    let mean = total as f64 / samples as f64;
+    assert!(
+        maximum <= 180 && mean <= 36.0,
+        "max {maximum}, mean {mean:.2}"
+    );
 }
 
 #[test]
@@ -369,6 +469,7 @@ fn patterned_image(format: u32, width: u32, height: u32, pattern: u8) -> RgbaIma
             match format {
                 BC4_UNORM => pixels.extend_from_slice(&[255, 255, 255, red]),
                 BC5_UNORM => pixels.extend_from_slice(&[red, red, red, green]),
+                BC1_UNORM | BC1_SRGB => pixels.extend_from_slice(&[red, green, blue, 255]),
                 BC7_UNORM | BC7_SRGB => pixels.extend_from_slice(&[red, green, blue, alpha]),
                 _ => unreachable!(),
             }
@@ -394,8 +495,13 @@ fn assert_lossy_match(format: u32, expected: &RgbaImage, actual: &RgbaImage) {
         .map(|&value| u64::from(value))
         .sum::<u64>() as f64
         / differences.len() as f64;
+    let (max_allowed, mean_allowed) = if matches!(format, BC1_UNORM | BC1_SRGB) {
+        (128, 25.0)
+    } else {
+        (96, 20.0)
+    };
     assert!(
-        maximum <= 96 && mean <= 20.0,
+        maximum <= max_allowed && mean <= mean_allowed,
         "{format:#x} error too large: max {maximum}, mean {mean:.2}"
     );
 }

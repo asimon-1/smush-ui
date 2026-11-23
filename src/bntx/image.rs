@@ -245,6 +245,10 @@ fn encode_image(
     if channel_mode == ChannelMode::Resolved {
         unresolve_channels(&mut source, channels)?;
     }
+    // rusty_dds normally emits opaque BC1 blocks; fit transparent blocks separately per mip.
+    let mut bc1_pixels = (format.channel_format() == ChannelFormat::Bc1
+        && source.chunks_exact(4).any(|pixel| pixel[3] < 128))
+    .then(|| source.clone());
     // rusty_dds owns the temporary DDS container. This boundary accepts only
     // its validated 2D mip surfaces and copies the exact BC block prefix out.
     let dds = std::panic::catch_unwind(|| {
@@ -292,13 +296,172 @@ fn encode_image(
             ));
         }
         mip_offsets.push(image_data.len() as u64);
-        image_data.extend_from_slice(&surface.swizzle(blocks)?);
+        if let Some(pixels) = &bc1_pixels
+            && pixels.chunks_exact(4).any(|pixel| pixel[3] < 128)
+        {
+            let mut transparent_blocks = blocks.to_vec();
+            apply_bc1_alpha(
+                &mut transparent_blocks,
+                surface.width(),
+                surface.height(),
+                pixels,
+            );
+            image_data.extend_from_slice(&surface.swizzle(&transparent_blocks)?);
+        } else {
+            image_data.extend_from_slice(&surface.swizzle(blocks)?);
+        }
+        if let Some(pixels) = &mut bc1_pixels
+            && mip + 1 < mip_count
+        {
+            *pixels = downsample_rgba(pixels, surface.width(), surface.height());
+        }
     }
     Ok(EncodedImage {
         image_data,
         mip_offsets,
         block_height_exponent,
     })
+}
+
+fn apply_bc1_alpha(blocks: &mut [u8], width: u32, height: u32, pixels: &[u8]) {
+    let width = width as usize;
+    let height = height as usize;
+    let blocks_per_row = width.div_ceil(4);
+    for (block_index, block) in blocks.chunks_exact_mut(8).enumerate() {
+        let block_x = block_index % blocks_per_row * 4;
+        let block_y = block_index / blocks_per_row * 4;
+        let mut has_transparency = false;
+        let mut opaque = Vec::new();
+        for y in 0..4 {
+            for x in 0..4 {
+                if block_x + x >= width || block_y + y >= height {
+                    continue;
+                }
+                let offset = ((block_y + y) * width + block_x + x) * 4;
+                let pixel = &pixels[offset..offset + 4];
+                if pixel[3] < 128 {
+                    has_transparency = true;
+                } else {
+                    opaque.push([pixel[0], pixel[1], pixel[2]]);
+                }
+            }
+        }
+        if !has_transparency {
+            continue;
+        }
+        let mut candidates = opaque.iter().copied().map(pack_rgb565).collect::<Vec<_>>();
+        if candidates.is_empty() {
+            candidates.push(0);
+        }
+        candidates.sort_unstable();
+        candidates.dedup();
+        let mut best = (u64::MAX, 0, 0);
+        for &first in &candidates {
+            for &second in candidates.iter().filter(|&&value| value >= first) {
+                let palette = bc1_palette(first, second);
+                let score = opaque
+                    .iter()
+                    .map(|pixel| {
+                        palette
+                            .iter()
+                            .map(|color| color_error(*pixel, *color))
+                            .min()
+                            .unwrap_or(0)
+                    })
+                    .sum();
+                best = best.min((score, first, second));
+            }
+        }
+        let (_, first, second) = best;
+        let palette = bc1_palette(first, second);
+        block[..2].copy_from_slice(&first.to_le_bytes());
+        block[2..4].copy_from_slice(&second.to_le_bytes());
+        let mut indices = 0u32;
+        for y in 0..4 {
+            for x in 0..4 {
+                let offset = 2 * (y * 4 + x);
+                let index = if block_x + x >= width || block_y + y >= height {
+                    3
+                } else {
+                    let pixel_offset = ((block_y + y) * width + block_x + x) * 4;
+                    let pixel = &pixels[pixel_offset..pixel_offset + 4];
+                    if pixel[3] < 128 {
+                        3
+                    } else {
+                        palette
+                            .iter()
+                            .enumerate()
+                            .min_by_key(|(_, color)| {
+                                color_error([pixel[0], pixel[1], pixel[2]], **color)
+                            })
+                            .map(|(index, _)| index as u32)
+                            .unwrap_or(0)
+                    }
+                };
+                indices |= index << offset;
+            }
+        }
+        block[4..8].copy_from_slice(&indices.to_le_bytes());
+    }
+}
+
+fn bc1_palette(first: u16, second: u16) -> [[u8; 3]; 3] {
+    let a = unpack_rgb565(first);
+    let b = unpack_rgb565(second);
+    let middle =
+        std::array::from_fn(|channel| ((u16::from(a[channel]) + u16::from(b[channel])) / 2) as u8);
+    [a, b, middle]
+}
+
+fn color_error(pixel: [u8; 3], color: [u8; 3]) -> u64 {
+    (0..3)
+        .map(|channel| {
+            let difference = i64::from(pixel[channel]) - i64::from(color[channel]);
+            (difference * difference) as u64
+        })
+        .sum()
+}
+
+fn pack_rgb565(color: [u8; 3]) -> u16 {
+    (u16::from(color[0]) * 31 / 255) << 11
+        | (u16::from(color[1]) * 63 / 255) << 5
+        | (u16::from(color[2]) * 31 / 255)
+}
+
+fn unpack_rgb565(color: u16) -> [u8; 3] {
+    let red = (color >> 11) & 31;
+    let green = (color >> 5) & 63;
+    let blue = color & 31;
+    [
+        ((red << 3) | (red >> 2)) as u8,
+        ((green << 2) | (green >> 4)) as u8,
+        ((blue << 3) | (blue >> 2)) as u8,
+    ]
+}
+
+fn downsample_rgba(pixels: &[u8], width: u32, height: u32) -> Vec<u8> {
+    // Use the same rounded 2x2 box filter as rusty_dds's generated mip chain.
+    let width = width as usize;
+    let height = height as usize;
+    let next_width = (width / 2).max(1);
+    let next_height = (height / 2).max(1);
+    let mut next = Vec::with_capacity(next_width * next_height * 4);
+    for y in 0..next_height {
+        for x in 0..next_width {
+            for channel in 0..4 {
+                let mut sum = 0u32;
+                for dy in 0..2 {
+                    for dx in 0..2 {
+                        let source_x = (x * 2 + dx).min(width - 1);
+                        let source_y = (y * 2 + dy).min(height - 1);
+                        sum += u32::from(pixels[(source_y * width + source_x) * 4 + channel]);
+                    }
+                }
+                next.push(((sum + 2) / 4) as u8);
+            }
+        }
+    }
+    next
 }
 
 pub(crate) fn validate_texture_profile(info: &TextureInfo) -> BinResult<()> {
@@ -322,6 +485,10 @@ pub(crate) fn validate_texture_profile(info: &TextureInfo) -> BinResult<()> {
 
 fn codec_format(format: ImageFormat) -> BinResult<(DecodeContent, DxgiFormat)> {
     match (format.channel_format(), format.type_format()) {
+        (ChannelFormat::Bc1, TypeFormat::Unorm) => Ok((DecodeContent::Bc1, DxgiFormat::BC1_UNorm)),
+        (ChannelFormat::Bc1, TypeFormat::Srgb) => {
+            Ok((DecodeContent::Bc1, DxgiFormat::BC1_UNorm_sRGB))
+        }
         (ChannelFormat::Bc4, TypeFormat::Unorm) => {
             Ok((DecodeContent::Bc4UNorm, DxgiFormat::BC4_UNorm))
         }

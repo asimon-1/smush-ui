@@ -5,6 +5,8 @@ use smush_ui::bntx::{
     derive_block_height_exponent, encode_new_texture,
 };
 
+pub const BC1_UNORM: u32 = 0x1a01;
+pub const BC1_SRGB: u32 = 0x1a06;
 pub const BC4_UNORM: u32 = 0x1d01;
 pub const BC5_UNORM: u32 = 0x1e01;
 pub const BC7_UNORM: u32 = 0x2001;
@@ -55,7 +57,7 @@ pub fn channels_for(format: u32) -> [ChannelSelector; 4] {
             ChannelSelector::Red,
             ChannelSelector::Green,
         ],
-        BC7_UNORM | BC7_SRGB => [
+        BC1_UNORM | BC1_SRGB | BC7_UNORM | BC7_SRGB => [
             ChannelSelector::Red,
             ChannelSelector::Green,
             ChannelSelector::Blue,

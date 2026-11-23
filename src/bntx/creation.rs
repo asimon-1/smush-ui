@@ -11,6 +11,8 @@ use std::collections::HashSet;
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum NewTextureFormat {
+    Bc1Unorm,
+    Bc1Srgb,
     Bc4Unorm,
     Bc5Unorm,
     Bc7Unorm,
@@ -20,6 +22,8 @@ pub enum NewTextureFormat {
 impl NewTextureFormat {
     pub const fn image_format(self) -> ImageFormat {
         ImageFormat::from_raw(match self {
+            Self::Bc1Unorm => 0x1a01,
+            Self::Bc1Srgb => 0x1a06,
             Self::Bc4Unorm => 0x1d01,
             Self::Bc5Unorm => 0x1e01,
             Self::Bc7Unorm => 0x2001,
@@ -29,6 +33,12 @@ impl NewTextureFormat {
 
     pub const fn channels(self) -> [ChannelSelector; 4] {
         match self {
+            Self::Bc1Unorm | Self::Bc1Srgb => [
+                ChannelSelector::Red,
+                ChannelSelector::Green,
+                ChannelSelector::Blue,
+                ChannelSelector::Alpha,
+            ],
             Self::Bc4Unorm => [
                 ChannelSelector::One,
                 ChannelSelector::One,

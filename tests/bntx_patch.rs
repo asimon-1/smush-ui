@@ -6,7 +6,8 @@ use common::{
 };
 use smush_ui::bntx::{
     AddTextureOptions, Bntx, ChannelMode, ImageFormat, NewTextureFormat, TexturePatch,
-    TextureProfile, TextureUpsert, add_texture, apply_texture_patch, encode_texture,
+    TextureProfile, TextureUpsert, add_texture, apply_texture_patch, decode_texture,
+    encode_texture,
     patch::{PatchSourceFormat, create_bntx_patch, patch_bntx_file},
     write_png,
 };
@@ -203,9 +204,19 @@ fn default_generator_uses_png_when_one_mip_profile_is_reconstructible() {
         },
     )
     .unwrap();
+    add_texture(
+        &mut modified,
+        "bc1",
+        &image,
+        AddTextureOptions {
+            profile: Some(TextureProfile::Format(NewTextureFormat::Bc1Unorm)),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let mut unsupported = modified.textures[0].clone();
-    unsupported.name = "bc1".into();
-    unsupported.info.format = ImageFormat::from_raw(0x1a06);
+    unsupported.name = "unsupported".into();
+    unsupported.info.format = ImageFormat::from_raw(0x1a02);
     modified.textures.push(unsupported);
     let base_path = workspace.path().join("base.bntx");
     let modified_path = workspace.path().join("modified.bntx");
@@ -219,10 +230,11 @@ fn default_generator_uses_png_when_one_mip_profile_is_reconstructible() {
         PatchSourceFormat::Png,
     )
     .unwrap();
-    assert_eq!(summary.png_fallbacks, ["bc1"]);
+    assert_eq!(summary.png_fallbacks, ["unsupported"]);
     let manifest = fs::read_to_string(patch_dir.join("bntx-patch.json")).unwrap();
     assert!(manifest.contains("\"source_format\": \"png\""));
     assert!(manifest.contains("\"source_format\": \"bin\""));
+    assert!(manifest.contains("\"format\": \"bc1-unorm\""));
     let output = workspace.path().join("out.bntx");
     patch_bntx_file(&base_path, &patch_dir, &output).unwrap();
     let patched = Bntx::from_bytes(&fs::read(output).unwrap()).unwrap();
@@ -239,6 +251,34 @@ fn default_generator_uses_png_when_one_mip_profile_is_reconstructible() {
         modified.textures[base.textures.len()].info
     );
     assert_eq!(patched.textures[base.textures.len()].mip_offsets.len(), 1);
+    assert_eq!(
+        patched.textures[base.textures.len() + 1].info,
+        modified.textures[base.textures.len() + 1].info
+    );
+    let original_bc1 = decode_texture(
+        &modified.textures[base.textures.len() + 1],
+        0,
+        ChannelMode::Resolved,
+    )
+    .unwrap();
+    let patched_bc1 = decode_texture(
+        &patched.textures[base.textures.len() + 1],
+        0,
+        ChannelMode::Resolved,
+    )
+    .unwrap();
+    assert_eq!(
+        original_bc1
+            .pixels
+            .chunks_exact(4)
+            .map(|pixel| pixel[3])
+            .collect::<Vec<_>>(),
+        patched_bc1
+            .pixels
+            .chunks_exact(4)
+            .map(|pixel| pixel[3])
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -393,7 +433,7 @@ fn batch_upserts_preserve_order_and_reject_duplicate_or_missing_targets() {
     );
 
     let mut unsupported = original.clone();
-    unsupported.textures[0].info.format = ImageFormat::from_raw(0x1a01);
+    unsupported.textures[0].info.format = ImageFormat::from_raw(0x1a02);
     let error = apply_texture_patch(
         &unsupported,
         &TexturePatch {

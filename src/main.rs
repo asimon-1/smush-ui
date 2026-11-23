@@ -179,6 +179,8 @@ enum OutputFormat {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum BntxTextureFormat {
+    Bc1Unorm,
+    Bc1Srgb,
     Bc4Unorm,
     Bc5Unorm,
     Bc7Unorm,
@@ -203,6 +205,8 @@ impl From<BntxPatchSourceFormat> for PatchSourceFormat {
 impl From<BntxTextureFormat> for NewTextureFormat {
     fn from(value: BntxTextureFormat) -> Self {
         match value {
+            BntxTextureFormat::Bc1Unorm => Self::Bc1Unorm,
+            BntxTextureFormat::Bc1Srgb => Self::Bc1Srgb,
             BntxTextureFormat::Bc4Unorm => Self::Bc4Unorm,
             BntxTextureFormat::Bc5Unorm => Self::Bc5Unorm,
             BntxTextureFormat::Bc7Unorm => Self::Bc7Unorm,

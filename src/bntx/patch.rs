@@ -242,6 +242,8 @@ fn read_bntx(path: &Path) -> io::Result<Bntx> {
 
 fn new_format(format: ImageFormat) -> Option<NewTextureFormat> {
     [
+        NewTextureFormat::Bc1Unorm,
+        NewTextureFormat::Bc1Srgb,
         NewTextureFormat::Bc4Unorm,
         NewTextureFormat::Bc5Unorm,
         NewTextureFormat::Bc7Unorm,
