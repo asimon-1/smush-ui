@@ -345,6 +345,15 @@ pub fn patch_bntx_file(
     let input = input.as_ref();
     let patch_directory = patch_directory.as_ref();
     let output = output.as_ref();
+    let bytes = fs::read(input)
+        .map_err(|error| io::Error::new(error.kind(), format!("{}: {error}", input.display())))?;
+    let original = Bntx::from_bytes(&bytes)
+        .map_err(|error| invalid_data(format!("{}: {error}", input.display())))?;
+    let result = apply_bntx_patch(&original, patch_directory)?;
+    write_bntx_atomic(&result, output)
+}
+
+pub(crate) fn apply_bntx_patch(original: &Bntx, patch_directory: &Path) -> io::Result<Bntx> {
     validate_bundle_root(patch_directory)?;
     let mut json = false;
     let mut jsonc = false;
@@ -391,11 +400,6 @@ pub fn patch_bntx_file(
             manifest.schema_version
         )));
     }
-
-    let bytes = fs::read(input)
-        .map_err(|error| io::Error::new(error.kind(), format!("{}: {error}", input.display())))?;
-    let original = Bntx::from_bytes(&bytes)
-        .map_err(|error| invalid_data(format!("{}: {error}", input.display())))?;
 
     let mut targets = HashSet::new();
     for (index, entry) in manifest.upsert.iter().enumerate() {
@@ -463,7 +467,7 @@ pub fn patch_bntx_file(
                     .as_ref()
                     .map(|name| TextureProfile::Like(name.clone()))
                     .or_else(|| format.map(TextureProfile::Format));
-                build_texture(&original, name, &image, profile.as_ref())
+                build_texture(original, name, &image, profile.as_ref())
                     .map_err(|error| invalid_data(format!("{context}: {error}")))?
             }
             BntxUpsertEntry::Bin {
@@ -526,7 +530,7 @@ pub fn patch_bntx_file(
     }
     validation::validate(&result)
         .map_err(|error| invalid_data(format!("{}: {error}", manifest_path.display())))?;
-    write_bntx_atomic(&result, output)
+    Ok(result)
 }
 
 fn invalid_input(message: impl Into<String>) -> io::Error {

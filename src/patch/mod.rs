@@ -12,12 +12,13 @@ use binrw::BinWriterExt;
 use self::{
     fs::{
         manifest_directory, parse_json_document, read_json_document, read_source,
-        safe_relative_path,
+        safe_relative_path, source_directory,
     },
     manifest::{PatchManifest, UpsertKind},
 };
 use crate::{
     bflyt::Bflyt,
+    bntx::{Bntx, fs::PackOptions, patch::apply_bntx_patch},
     sarc::{
         SarcArchive,
         fs::{
@@ -105,17 +106,7 @@ pub fn patch_archive(
     if final_count > 0x3fff {
         return Err(invalid_input("SARC patch result exceeds 0x3fff entries"));
     }
-    if let Some((index, entry)) = manifest.patch.iter().enumerate().next() {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            format!(
-                "{} patch[{index}] {:?}: BNTX patch application is implemented in Stage 6",
-                manifest_path.display(),
-                entry.archive_path
-            ),
-        ));
-    }
-    let mut prepared = Vec::with_capacity(manifest.upsert.len());
+    let mut prepared_upserts = Vec::with_capacity(manifest.upsert.len());
     for (index, entry) in manifest.upsert.iter().enumerate() {
         let context = format!(
             "{} upsert[{index}] {:?}",
@@ -139,16 +130,47 @@ pub fn patch_archive(
                 writer.into_inner()
             }
             UpsertKind::BntxBundle => {
-                return Err(io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    format!("{context}: BNTX bundle upserts are implemented in Stage 6"),
-                ));
+                let directory = source_directory(&root, &entry.source, &context)?;
+                let bntx = crate::bntx::fs::read_bundle(&directory, PackOptions::default())
+                    .map_err(|error| io::Error::new(error.kind(), format!("{context}: {error}")))?;
+                bntx.to_bytes().map_err(|error| {
+                    invalid_data(format!(
+                        "{context}: failed to serialize BNTX bundle: {error}"
+                    ))
+                })?
             }
         };
-        prepared.push((entry.archive_path.clone(), data));
+        prepared_upserts.push((entry.archive_path.clone(), data));
+    }
+    let mut prepared_patches = Vec::with_capacity(manifest.patch.len());
+    for (index, entry) in manifest.patch.iter().enumerate() {
+        let context = format!(
+            "{} patch[{index}] {:?}",
+            manifest_path.display(),
+            entry.archive_path
+        );
+        let directory = source_directory(&root, &entry.source, &context)?;
+        let original_index =
+            named_entry_index(&original, &entry.archive_path)?.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("{context}: archive entry does not exist"),
+                )
+            })?;
+        let original_data = &original.entries[original_index].data;
+        let bntx = Bntx::from_bytes(original_data)
+            .map_err(|error| invalid_data(format!("{context}: invalid BNTX: {error}")))?;
+        let patched = apply_bntx_patch(&bntx, &directory)
+            .map_err(|error| io::Error::new(error.kind(), format!("{context}: {error}")))?;
+        let data = patched.to_bytes().map_err(|error| {
+            invalid_data(format!(
+                "{context}: failed to serialize patched BNTX: {error}"
+            ))
+        })?;
+        prepared_patches.push((entry.archive_path.clone(), data));
     }
     let mut result = original.clone();
-    for (name, data) in prepared {
+    for (name, data) in prepared_upserts.into_iter().chain(prepared_patches) {
         upsert_named(&mut result, name, data)?;
     }
     for entry in &manifest.remove {

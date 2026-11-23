@@ -39,6 +39,24 @@ pub(super) fn manifest_directory(manifest_path: &Path) -> io::Result<PathBuf> {
 }
 
 pub(super) fn read_source(root: &Path, relative: &str, context: &str) -> io::Result<Vec<u8>> {
+    let path = resolve_source_path(root, relative, context)?;
+    read_regular_file(&path, context)
+}
+
+pub(super) fn source_directory(root: &Path, relative: &str, context: &str) -> io::Result<PathBuf> {
+    let path = resolve_source_path(root, relative, context)?;
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|error| path_error("inspect patch directory", &path, error))?;
+    if !metadata.is_dir() {
+        return Err(invalid_input(format!(
+            "{context}: source {} is not a directory",
+            path.display()
+        )));
+    }
+    Ok(path)
+}
+
+fn resolve_source_path(root: &Path, relative: &str, context: &str) -> io::Result<PathBuf> {
     let relative = safe_relative_path(relative)
         .map_err(|error| invalid_input(format!("{context}: {error}")))?;
     let path = root.join(relative);
@@ -59,7 +77,7 @@ pub(super) fn read_source(root: &Path, relative: &str, context: &str) -> io::Res
             path.display()
         )));
     }
-    read_regular_file(&path, context)
+    Ok(path)
 }
 
 pub(super) fn safe_relative_path(value: &str) -> io::Result<PathBuf> {

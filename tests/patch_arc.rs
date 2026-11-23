@@ -4,10 +4,17 @@ mod test_fs;
 use binrw::BinReaderExt;
 use smush_ui::{
     bflyt::Bflyt,
+    bntx::{
+        Bntx, UserDataValue,
+        fs::{UnpackOptions, unpack_to_directory},
+        patch::{PatchSourceFormat, create_bntx_patch},
+    },
     patch::{PatchArcOptions, patch_archive},
     sarc::{SarcArchive, SarcEntry},
 };
 use std::{fs, io::Cursor, path::Path, process::Command};
+#[path = "common/bntx.rs"]
+mod test_bntx;
 use test_fs::TestDirectory;
 
 fn archive(path: &Path) -> SarcArchive {
@@ -255,22 +262,117 @@ fn late_bad_bflyt_source_preserves_input_and_output() {
     assert_eq!(fs::read(&input).unwrap(), original);
 }
 
+fn nested_bntx_inputs(root: &Path) -> (Bntx, Bntx) {
+    let base = test_bntx::synthetic_bntx();
+    let mut changed = base.clone();
+    changed.textures[0].user_data[0].value =
+        UserDataValue::String(vec!["edited through SARC".into()]);
+    fs::write(root.join("base.bntx"), base.to_bytes().unwrap()).unwrap();
+    fs::write(root.join("changed.bntx"), changed.to_bytes().unwrap()).unwrap();
+    create_bntx_patch(
+        root.join("base.bntx"),
+        root.join("changed.bntx"),
+        root.join("delta"),
+        PatchSourceFormat::Bin,
+    )
+    .unwrap();
+    unpack_to_directory(
+        &changed,
+        root.join("bundle"),
+        UnpackOptions {
+            write_previews: false,
+            ..UnpackOptions::default()
+        },
+    )
+    .unwrap();
+    (base, changed)
+}
+
 #[test]
-fn stage_six_kinds_are_typed_but_not_applied_yet() {
-    let workspace = TestDirectory::new("patch-arc-future-kinds");
-    let input = workspace.path().join("input.arc");
-    base_archive(&input);
-    let manifest = workspace.path().join("patch.json");
-    let output = workspace.path().join("output.arc");
-    for document in [
-        r#"{"schema_version":1,"patch":[{"archive_path":"anim/old.bflan","kind":"bntx","source":"delta"}]}"#,
-        r#"{"schema_version":1,"upsert":[{"archive_path":"timg/new.bntx","kind":"bntx-bundle","source":"bundle"}]}"#,
-    ] {
-        fs::write(&manifest, document).unwrap();
-        let error = patch_archive(&input, &manifest, &output, PatchArcOptions).unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
-        assert!(!output.exists());
+fn applies_bntx_delta_and_complete_bundle_with_other_archive_edits() {
+    let workspace = TestDirectory::new("patch-arc-nested");
+    let root = workspace.path();
+    let (base, changed) = nested_bntx_inputs(root);
+    let input = root.join("input.arc");
+    let unchanged = b"untouched opaque payload".to_vec();
+    let entries = vec![
+        SarcEntry::new("timg/delta.bntx", base.to_bytes().unwrap()),
+        SarcEntry::new("timg/existing.bntx", base.to_bytes().unwrap()),
+        SarcEntry::new("anim/replace.bflan", b"old".to_vec()),
+        SarcEntry::new("anim/keep.bflan", unchanged.clone()),
+        SarcEntry::new("anim/remove.bflan", b"remove".to_vec()),
+    ];
+    fs::write(&input, SarcArchive::new(entries).to_bytes().unwrap()).unwrap();
+    fs::write(root.join("opaque.bflan"), b"exact replacement\0\xff").unwrap();
+    write_layout_json(&root.join("layout.json"));
+    let manifest = root.join("patch.json");
+    fs::write(
+        &manifest,
+        r#"{"schema_version":1,"upsert":[{"archive_path":"anim/replace.bflan","kind":"file","source":"opaque.bflan"},{"archive_path":"blyt/new.bflyt","kind":"bflyt-json","source":"layout.json"},{"archive_path":"timg/existing.bntx","kind":"bntx-bundle","source":"bundle"},{"archive_path":"timg/new.bntx","kind":"bntx-bundle","source":"bundle"}],"patch":[{"archive_path":"timg/delta.bntx","kind":"bntx","source":"delta"}],"remove":[{"archive_path":"anim/remove.bflan"}]}"#,
+    )
+    .unwrap();
+    let output = root.join("output.arc");
+    patch_archive(&input, &manifest, &output, PatchArcOptions).unwrap();
+    let result = archive(&output);
+    assert_eq!(result.entries.len(), 6);
+    let payload = |name: &str| {
+        result
+            .entries
+            .iter()
+            .find(|entry| entry.name.as_deref() == Some(name))
+            .unwrap()
+            .data
+            .clone()
+    };
+    assert_eq!(payload("anim/keep.bflan"), unchanged);
+    assert_eq!(payload("anim/replace.bflan"), b"exact replacement\0\xff");
+    assert!(
+        !result
+            .entries
+            .iter()
+            .any(|entry| entry.name.as_deref() == Some("anim/remove.bflan"))
+    );
+    assert_eq!(
+        Cursor::new(payload("blyt/new.bflyt"))
+            .read_le::<Bflyt>()
+            .unwrap()
+            .version,
+        [8, 0, 0, 0]
+    );
+    for name in ["timg/delta.bntx", "timg/existing.bntx", "timg/new.bntx"] {
+        let model = Bntx::from_bytes(&payload(name)).unwrap();
+        assert_eq!(model.textures, changed.textures);
     }
+}
+
+#[test]
+fn late_nested_bntx_failure_keeps_existing_destination() {
+    let workspace = TestDirectory::new("patch-arc-nested-failure");
+    let root = workspace.path();
+    let (base, _) = nested_bntx_inputs(root);
+    let input = root.join("input.arc");
+    fs::write(
+        &input,
+        SarcArchive::new(vec![SarcEntry::new(
+            "timg/base.bntx",
+            base.to_bytes().unwrap(),
+        )])
+        .to_bytes()
+        .unwrap(),
+    )
+    .unwrap();
+    let original = fs::read(&input).unwrap();
+    fs::write(root.join("opaque.bflan"), b"ready").unwrap();
+    fs::remove_file(root.join("delta/bntx-patch.json")).unwrap();
+    let manifest = root.join("patch.json");
+    fs::write(&manifest, r#"{"schema_version":1,"upsert":[{"archive_path":"anim/new.bflan","kind":"file","source":"opaque.bflan"}],"patch":[{"archive_path":"timg/base.bntx","kind":"bntx","source":"delta"}]}"#).unwrap();
+    let output = root.join("output.arc");
+    fs::write(&output, b"sentinel").unwrap();
+    let error = patch_archive(&input, &manifest, &output, PatchArcOptions).unwrap_err();
+    assert!(error.to_string().contains("patch[0]"));
+    assert!(error.to_string().contains("timg/base.bntx"));
+    assert_eq!(fs::read(&input).unwrap(), original);
+    assert_eq!(fs::read(&output).unwrap(), b"sentinel");
 }
 
 #[test]
