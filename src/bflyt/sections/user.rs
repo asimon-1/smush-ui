@@ -43,7 +43,6 @@ impl UserData {
 pub struct UserDataEntry {
     pub name: String,
     pub value: UserDataValue,
-    pub reserved: u8,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -138,7 +137,7 @@ fn read_user_data<R: Read + Seek>(
         let data_offset = u32::read_options(&mut entry_reader, endian, ())? as usize;
         let count = u16::read_options(&mut entry_reader, endian, ())? as usize;
         let type_tag = u8::read_options(&mut entry_reader, endian, ())?;
-        let reserved = u8::read_options(&mut entry_reader, endian, ())?;
+        let _reserved = u8::read_options(&mut entry_reader, endian, ())?;
         let name = read_null_string_at(&payload, entry_offset + name_offset, endian)?;
         let value = read_value(
             &payload,
@@ -148,11 +147,7 @@ fn read_user_data<R: Read + Seek>(
             type_tag,
             endian,
         )?;
-        entries.push(UserDataEntry {
-            name,
-            value,
-            reserved,
-        });
+        entries.push(UserDataEntry { name, value });
     }
     Ok(UserData { entries })
 }
@@ -294,7 +289,7 @@ fn write_user_data<W: Write + Seek>(
         write_u32(&mut encoded, data_offsets[entry_index], endian);
         write_u16(&mut encoded, entry.value.count(), endian);
         encoded.push(entry.value.type_tag());
-        encoded.push(entry.reserved);
+        encoded.push(0);
         payload[entry_offset..entry_offset + 12].copy_from_slice(&encoded);
     }
     writer.write_all(&payload)?;

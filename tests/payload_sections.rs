@@ -19,7 +19,6 @@ fn round_trips_control_user_and_material_payloads() {
         entries: vec![UserDataEntry {
             name: "Value".to_owned(),
             value: UserDataValue::Integers(vec![4, 5]),
-            reserved: 0,
         }],
     });
     let material = Material::new(Vec::new());
@@ -40,6 +39,12 @@ fn round_trips_control_user_and_material_payloads() {
     assert_eq!(parsed_control.data.pane_bindings, ["Pane"]);
     let parsed_user: User = input.read_be().expect("user data should parse");
     assert_eq!(parsed_user.data.entries[0].name, "Value");
+    assert!(
+        serde_jsonc2::to_value(&parsed_user.data.entries[0])
+            .unwrap()
+            .get("reserved")
+            .is_none()
+    );
     let parsed_material: Material = input.read_be().expect("material should parse");
     assert!(parsed_material.materials.is_empty());
     assert_eq!(input.position(), bytes.len() as u64);

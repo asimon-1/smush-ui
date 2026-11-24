@@ -105,15 +105,15 @@ pub struct TextureCoordinateGenerator {
 #[binrw]
 pub struct TevStage {
     pub color_mode: u8,
+    #[brw(pad_after = 2)]
     pub alpha_mode: u8,
-    pub reserved: u16,
 }
 
 #[derive(Serialize, Deserialize)]
 #[binrw]
 pub struct AlphaCompare {
+    #[brw(pad_after = 3)]
     pub compare_mode: u8,
-    pub reserved: [u8; 3],
     pub reference: f32,
 }
 
@@ -202,7 +202,7 @@ pub fn decode_material_payload(payload: &[u8]) -> BinResult<Material> {
     let material_count = u16::read_options(&mut header, Endian::Little, ())
         .map_err(|_| material_error(0, "material count table is truncated"))?
         as usize;
-    let reserved = u16::read_options(&mut header, Endian::Little, ())
+    let _reserved = u16::read_options(&mut header, Endian::Little, ())
         .map_err(|_| material_error(2, "material count table is truncated"))?;
     let table_end = 4usize
         .checked_add(
@@ -251,10 +251,7 @@ pub fn decode_material_payload(payload: &[u8]) -> BinResult<Material> {
         )?);
     }
 
-    Ok(Material {
-        reserved,
-        materials,
-    })
+    Ok(Material { materials })
 }
 
 pub fn encode_material_payload(material: &Material) -> BinResult<Vec<u8>> {
@@ -263,7 +260,6 @@ pub fn encode_material_payload(material: &Material) -> BinResult<Vec<u8>> {
     let table_end = 4 + material.materials.len() * 4;
     let mut payload = vec![0; table_end];
     payload[..2].copy_from_slice(&material_count.to_le_bytes());
-    payload[2..4].copy_from_slice(&material.reserved.to_le_bytes());
 
     for (index, entry) in material.materials.iter().enumerate() {
         let offset = u32::try_from(payload.len() + 8)
@@ -417,17 +413,12 @@ fn material_error(position: usize, message: impl Into<String>) -> BinError {
 
 #[derive(Serialize, Deserialize)]
 pub struct Material {
-    #[serde(skip)]
-    reserved: u16,
     pub materials: Vec<MaterialEntry>,
 }
 
 impl Material {
     pub fn new(materials: Vec<MaterialEntry>) -> Self {
-        Self {
-            reserved: 0,
-            materials,
-        }
+        Self { materials }
     }
 }
 
@@ -460,7 +451,6 @@ impl BinRead for Material {
         reader.read_exact(&mut payload)?;
         let decoded = decode_material_payload(&payload)?;
         Ok(Self {
-            reserved: decoded.reserved,
             materials: decoded.materials,
         })
     }

@@ -46,7 +46,7 @@ fn material_record(name: &str, flags: u32, variable_data: Vec<u8>) -> Vec<u8> {
 fn material_section(records: Vec<Vec<u8>>) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.extend_from_slice(&(records.len() as u16).to_le_bytes());
-    payload.extend_from_slice(&0x9876u16.to_le_bytes());
+    payload.extend_from_slice(&0u16.to_le_bytes());
     payload.resize(4 + records.len() * 4, 0);
 
     for (index, record) in records.iter().enumerate() {
@@ -140,14 +140,12 @@ fn component_models_have_fixed_serialized_sizes() {
         encoded_len(&TevStage {
             color_mode: 1,
             alpha_mode: 2,
-            reserved: 3,
         }),
         4
     );
     assert_eq!(
         encoded_len(&AlphaCompare {
             compare_mode: 1,
-            reserved: [2; 3],
             reference: 0.5,
         }),
         8
@@ -184,6 +182,29 @@ fn component_models_have_fixed_serialized_sizes() {
         }),
         8
     );
+}
+
+#[test]
+fn zero_only_material_bytes_are_padding() {
+    let stage = TevStage {
+        color_mode: 1,
+        alpha_mode: 2,
+    };
+    let mut stage_bytes = Cursor::new(Vec::new());
+    stage_bytes.write_le(&stage).unwrap();
+    assert_eq!(stage_bytes.into_inner(), [1, 2, 0, 0]);
+    let stage_json = serde_jsonc2::to_value(&stage).unwrap();
+    assert!(stage_json.get("reserved").is_none());
+
+    let compare = AlphaCompare {
+        compare_mode: 3,
+        reference: 0.5,
+    };
+    let mut compare_bytes = Cursor::new(Vec::new());
+    compare_bytes.write_le(&compare).unwrap();
+    assert_eq!(compare_bytes.into_inner(), [3, 0, 0, 0, 0, 0, 0, 63]);
+    let compare_json = serde_jsonc2::to_value(&compare).unwrap();
+    assert!(compare_json.get("reserved").is_none());
 }
 
 #[test]
