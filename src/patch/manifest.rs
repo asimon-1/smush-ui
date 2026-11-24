@@ -25,6 +25,7 @@ pub struct UpsertEntry {
 pub enum UpsertKind {
     File,
     BflytJson,
+    BflanJson,
     BntxBundle,
 }
 

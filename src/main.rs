@@ -11,6 +11,7 @@ use binrw::{BinReaderExt, BinWriterExt};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use smush_ui::{
+    bflan::Bflan,
     bflyt::Bflyt,
     bntx::{
         AddTextureOptions, Bntx, BntxInspection, ChannelMode, NewTextureFormat, TextureProfile,
@@ -35,7 +36,7 @@ use smush_ui::{
 #[derive(Parser)]
 #[command(
     about = "Edit Nintendo Switch UI layouts and archives",
-    after_help = "Command tree:\n  bflyt\n    to-json\n    from-json\n  arc\n    unpack\n    pack\n    add-file\n    patch\n    list\n    diff\n  bntx\n    unpack\n    pack\n    add-texture\n    patch\n    create-patch\n    create\n    list\n    diff\n\nRun 'smush-ui <FILETYPE> --help' for required arguments, or 'smush-ui <FILETYPE> <COMMAND> --help' for options and examples."
+    after_help = "Command tree:\n  bflyt\n    to-json\n    from-json\n  bflan\n    to-json\n    from-json\n  arc\n    unpack\n    pack\n    add-file\n    patch\n    list\n    diff\n  bntx\n    unpack\n    pack\n    add-texture\n    patch\n    create-patch\n    create\n    list\n    diff\n\nRun 'smush-ui <FILETYPE> --help' for required arguments, or 'smush-ui <FILETYPE> <COMMAND> --help' for options and examples."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -51,6 +52,14 @@ enum Command {
     Bflyt {
         #[command(subcommand)]
         command: BflytCommand,
+    },
+    /// Read and write BFLAN layout animations.
+    #[command(
+        after_help = "Required arguments:\n  to-json <INPUT> <OUTPUT>\n  from-json <INPUT> <OUTPUT>\n\nRun 'smush-ui bflan <COMMAND> --help' for options and examples."
+    )]
+    Bflan {
+        #[command(subcommand)]
+        command: BflanCommand,
     },
     /// Read and write SARC archives.
     #[command(
@@ -77,6 +86,16 @@ enum BflytCommand {
     ToJson { input: PathBuf, output: PathBuf },
     /// Serialize JSON to a little-endian BFLYT file.
     #[command(after_help = "Example:\n  smush-ui bflyt from-json layout.json rebuilt-layout.bflyt")]
+    FromJson { input: PathBuf, output: PathBuf },
+}
+
+#[derive(Subcommand)]
+enum BflanCommand {
+    /// Deserialize a little-endian BFLAN file to formatted JSON.
+    #[command(after_help = "Example:\n  smush-ui bflan to-json animation.bflan animation.json")]
+    ToJson { input: PathBuf, output: PathBuf },
+    /// Serialize JSON to a little-endian BFLAN file.
+    #[command(after_help = "Example:\n  smush-ui bflan from-json animation.json rebuilt.bflan")]
     FromJson { input: PathBuf, output: PathBuf },
 }
 
@@ -138,6 +157,9 @@ enum ArcCommand {
         /// Include semantic field changes for embedded BFLYT files.
         #[arg(long)]
         expand_bflyt: bool,
+        /// Include semantic field changes for embedded BFLAN files.
+        #[arg(long)]
+        expand_bflan: bool,
         /// Include texture-level changes for embedded BNTX files.
         #[arg(long)]
         expand_bntx: bool,
@@ -307,6 +329,29 @@ fn main() -> ExitCode {
 
 fn run() -> Result<RunOutcome, Box<dyn std::error::Error>> {
     match Cli::parse().command {
+        Command::Bflan { command } => match command {
+            BflanCommand::ToJson { input, output } => {
+                let bytes = fs::read(&input)
+                    .map_err(|error| path_error("read BFLAN input", &input, error))?;
+                let animation = Bflan::from_bytes(&bytes)
+                    .map_err(|error| path_error("parse BFLAN input", &input, error))?;
+                let output_file = File::create(&output)
+                    .map_err(|error| path_error("create JSON output", &output, error))?;
+                serde_jsonc2::to_writer_pretty(BufWriter::new(output_file), &animation)
+                    .map_err(|error| path_error("write JSON output", &output, error))?;
+            }
+            BflanCommand::FromJson { input, output } => {
+                let input_file = File::open(&input)
+                    .map_err(|error| path_error("open JSON input", &input, error))?;
+                let animation: Bflan = serde_jsonc2::from_reader(BufReader::new(input_file))
+                    .map_err(|error| path_error("parse JSON input", &input, error))?;
+                let bytes = animation
+                    .to_bytes()
+                    .map_err(|error| path_error("serialize BFLAN", &output, error))?;
+                fs::write(&output, bytes)
+                    .map_err(|error| path_error("write BFLAN output", &output, error))?;
+            }
+        },
         Command::Bflyt { command } => match command {
             BflytCommand::ToJson { input, output } => {
                 let input_file = File::open(&input)
@@ -391,6 +436,7 @@ fn run() -> Result<RunOutcome, Box<dyn std::error::Error>> {
                 format,
                 check,
                 expand_bflyt,
+                expand_bflan,
                 expand_bntx,
             } => {
                 return diff::run_arc(
@@ -400,6 +446,7 @@ fn run() -> Result<RunOutcome, Box<dyn std::error::Error>> {
                     check,
                     SarcDiffOptions {
                         expand_bflyt,
+                        expand_bflan,
                         expand_bntx,
                     },
                 );

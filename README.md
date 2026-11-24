@@ -1,7 +1,7 @@
 # smush-ui
 
 `smush-ui` is a Rust library and command-line tool for Nintendo Switch UI files. It reads and edits
-BFLYT layouts as JSON, reads and edits little-endian SARC archives, and provides lossless and PNG
+BFLYT layouts and BFLAN animations as JSON, reads and edits little-endian SARC archives, and provides lossless and PNG
 workflows for version-4 NX BNTX texture containers.
 
 JSON makes layouts editable without requiring users to work with binary offsets or packed fields.
@@ -14,11 +14,13 @@ Planned formats:
 
 - BFFNT (Fonts)
 - BFLIM (Layout Images)
-- BFLAN (Layout Animations)
 
 ## What it supports
 
 - BFLYT
+  - Parsing and writing
+  - Serialization to and from JSON
+- BFLAN
   - Parsing and writing
   - Serialization to and from JSON
 - BNTX
@@ -48,6 +50,7 @@ Usage: smush-ui.exe <COMMAND>
 
 Commands:
   bflyt  Read and write BFLYT layouts
+  bflan  Read and write BFLAN layout animations
   arc    Read and write SARC archives
   bntx   Read and write BNTX texture containers
   help   Print this message or the help of the given subcommand(s)
@@ -57,6 +60,9 @@ Options:
 
 Command tree:
   bflyt
+    to-json
+    from-json
+  bflan
     to-json
     from-json
   arc
@@ -88,6 +94,8 @@ Commands that write files print nothing on success. The list and diff commands p
 | --- | --- | --- |
 | `bflyt to-json` | `smush-ui.exe bflyt to-json layout.bflyt layout.json` | Export a layout as JSON. |
 | `bflyt from-json` | `smush-ui.exe bflyt from-json layout.json rebuilt.bflyt` | Write a layout from JSON. |
+| `bflan to-json` | `smush-ui.exe bflan to-json animation.bflan animation.json` | Export an animation as JSON. |
+| `bflan from-json` | `smush-ui.exe bflan from-json animation.json rebuilt.bflan` | Write an animation from JSON. |
 | `arc unpack` | `smush-ui.exe arc unpack archive.arc archive-files` | Extract archive files. |
 | `arc pack` | `smush-ui.exe arc pack archive-files rebuilt.arc` | Build an archive from a directory. |
 | `arc add-file` | `smush-ui.exe arc add-file archive.arc asset.bin assets/asset.bin updated.arc` | Insert a file at an archive path. |
@@ -116,6 +124,17 @@ Convert edited JSON back to BFLYT:
 ```sh
 cargo run -- bflyt from-json layout.json rebuilt-layout.bflyt
 ```
+
+### BFLAN animations
+
+Convert a BFLAN file to editable JSON and back:
+
+```sh
+cargo run -- bflan to-json animation.bflan animation.json
+cargo run -- bflan from-json animation.json rebuilt-animation.bflan
+```
+
+The JSON contains animation tags, groups, textures, tracks, and keyframes. File sizes, counts, and offsets are rebuilt from those fields. Unknown section payloads remain available as bytes. Other BFLAN versions and byte orders are rejected until their layouts are verified.
 
 ### SARC archives
 
@@ -157,7 +176,7 @@ For example, a `patch.json` beside `asset.bin` can insert that file:
 }
 ```
 
-Source paths are relative to the manifest. `upsert` also accepts `bflyt-json` and `bntx-bundle`
+Source paths are relative to the manifest. `upsert` also accepts `bflyt-json`, `bflan-json`, and `bntx-bundle`
 sources. Use `remove` to delete an entry or `patch` to apply a BNTX patch directory to an entry.
 
 Inspect an archive without extracting it, or compare two archives by entry identity and SHA-256:
@@ -182,13 +201,12 @@ entries: 1 -> 1; added=0 removed=0 changed=1
 ```
 
 Pass `--format json` for versioned JSON output in a stable format for CI. `arc diff` accepts
-`--expand-bflyt` and `--expand-bntx` to show field or texture changes when both payloads parse as
+`--expand-bflyt`, `--expand-bflan`, and `--expand-bntx` to show field or texture changes when both payloads parse as
 the selected format. Use `--check` with either diff command to return status `3` when files differ.
 Parse and I/O failures return status `1`.
 
-SARC entries are extracted and packed as raw files. The tool does not decode embedded BFLYT,
-BNTX, BFLAN, or other entry payloads during mutating archive operations. Only the opt-in
-`arc diff` expansion flags parse embedded BFLYT or BNTX payloads. If parsing fails, the command
+SARC entries are extracted and packed as raw files. The `bflan-json` upsert converts JSON to an animation when patching an archive. Other entry payloads remain raw during mutating archive operations. The opt-in
+`arc diff` expansion flags parse embedded BFLYT, BFLAN, or BNTX payloads. If parsing fails, the command
 reports the outer payload difference. Decompress zstd `.zs` files and Yaz0 files before using these
 commands.
 

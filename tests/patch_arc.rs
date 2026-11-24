@@ -3,6 +3,7 @@ mod test_fs;
 
 use binrw::BinReaderExt;
 use smush_ui::{
+    bflan::{Bflan, Pat1, Section as BflanSection},
     bflyt::Bflyt,
     bntx::{
         Bntx, UserDataValue,
@@ -38,6 +39,48 @@ fn write_layout_json(path: &Path) {
         sections: Vec::new(),
     };
     fs::write(path, serde_jsonc2::to_vec_pretty(&layout).unwrap()).unwrap();
+}
+
+#[test]
+fn patches_bflan_json_without_changing_other_payloads() {
+    let workspace = TestDirectory::new("patch-arc-bflan");
+    let input = workspace.path().join("input.arc");
+    let animation = Bflan::new(vec![BflanSection::Pat1(Pat1 {
+        order: 1,
+        user_data: None,
+        start_frame: 0,
+        end_frame: 5,
+        child_binding: false,
+        name: "Edited".into(),
+        groups: vec![],
+    })]);
+    let original = SarcArchive::new(vec![
+        SarcEntry::new("anim/open.bflan", b"old".to_vec()),
+        SarcEntry::new("blyt/keep.bflyt", b"unchanged".to_vec()),
+    ]);
+    fs::write(&input, original.to_bytes().unwrap()).unwrap();
+    let patch_dir = workspace.path().join("patch");
+    fs::create_dir_all(&patch_dir).unwrap();
+    fs::write(
+        patch_dir.join("animation.json"),
+        serde_jsonc2::to_vec_pretty(&animation).unwrap(),
+    )
+    .unwrap();
+    fs::write(patch_dir.join("patch.json"), r#"{"schema_version":1,"upsert":[{"archive_path":"anim/open.bflan","kind":"bflan-json","source":"animation.json"}]}"#).unwrap();
+    let output = workspace.path().join("output.arc");
+    patch_archive(
+        &input,
+        patch_dir.join("patch.json"),
+        &output,
+        PatchArcOptions,
+    )
+    .unwrap();
+    let result = archive(&output);
+    assert_eq!(result.entries[1].data, b"unchanged");
+    assert_eq!(
+        Bflan::from_bytes(&result.entries[0].data).unwrap(),
+        animation
+    );
 }
 
 #[test]

@@ -7,6 +7,7 @@ use binrw::BinReaderExt;
 use serde::Serialize;
 
 use crate::{
+    bflan::{Bflan, inspect::BflanDiff},
     bflyt::{Bflyt, inspect::BflytDiff},
     bntx::{Bntx, BntxDiff},
     hash::sha256_hex,
@@ -26,6 +27,7 @@ pub enum SarcEntryIdentity {
 pub enum DetectedFileKind {
     Sarc,
     Bflyt,
+    Bflan,
     Bntx,
     Opaque,
 }
@@ -35,6 +37,7 @@ impl DetectedFileKind {
         match self {
             Self::Sarc => "sarc",
             Self::Bflyt => "bflyt",
+            Self::Bflan => "bflan",
             Self::Bntx => "bntx",
             Self::Opaque => "opaque",
         }
@@ -70,6 +73,8 @@ pub struct SarcEntryChange {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bflyt: Option<BflytDiff>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub bflan: Option<BflanDiff>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bntx: Option<BntxDiff>,
 }
 
@@ -85,6 +90,7 @@ pub struct SarcDiff {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SarcDiffOptions {
     pub expand_bflyt: bool,
+    pub expand_bflan: bool,
     pub expand_bntx: bool,
 }
 
@@ -171,6 +177,18 @@ pub fn diff_with_options(
                     } else {
                         None
                     },
+                    bflan: if options.expand_bflan
+                        && is_candidate(
+                            &identity,
+                            "bflan",
+                            before_kind,
+                            after_kind,
+                            DetectedFileKind::Bflan,
+                        ) {
+                        diff_bflan_payloads(&before_entry.data, &after_entry.data)
+                    } else {
+                        None
+                    },
                     bntx: if options.expand_bntx
                         && is_candidate(
                             &identity,
@@ -213,6 +231,12 @@ fn diff_bflyt_payloads(before: &[u8], after: &[u8]) -> Option<BflytDiff> {
     crate::bflyt::inspect::diff_bflyt(&before, &after).ok()
 }
 
+fn diff_bflan_payloads(before: &[u8], after: &[u8]) -> Option<BflanDiff> {
+    let before = Bflan::from_bytes(before).ok()?;
+    let after = Bflan::from_bytes(after).ok()?;
+    crate::bflan::inspect::diff_bflan(&before, &after).ok()
+}
+
 fn diff_bntx_payloads(before: &[u8], after: &[u8]) -> Option<BntxDiff> {
     let before = Bntx::from_bytes(before).ok()?;
     let after = Bntx::from_bytes(after).ok()?;
@@ -248,6 +272,8 @@ pub fn detect_magic(data: &[u8]) -> DetectedFileKind {
         DetectedFileKind::Sarc
     } else if data.starts_with(b"FLYT\xff\xfe\x14\x00") {
         DetectedFileKind::Bflyt
+    } else if data.starts_with(b"FLAN\xff\xfe\x14\x00") {
+        DetectedFileKind::Bflan
     } else if data.starts_with(b"BNTX\0\0\0\0") {
         DetectedFileKind::Bntx
     } else {

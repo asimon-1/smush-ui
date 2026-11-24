@@ -109,6 +109,17 @@ fn write_sarc_diff(
                 );
             }
         }
+        if let Some(bflan) = &entry.bflan {
+            for change in &bflan.changes {
+                println!(
+                    "    bflan {:?} {} before={} after={}",
+                    change.kind,
+                    change.path,
+                    display_json_value(change.before.as_ref()),
+                    display_json_value(change.after.as_ref())
+                );
+            }
+        }
         if let Some(bntx) = &entry.bntx {
             write_nested_bntx_diff(bntx);
         }

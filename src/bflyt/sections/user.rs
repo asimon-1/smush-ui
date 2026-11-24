@@ -18,7 +18,7 @@ pub struct User {
 }
 
 /// The named values stored by a `usd1` section.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UserData {
     pub entries: Vec<UserDataEntry>,
 }
@@ -39,13 +39,13 @@ impl UserData {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UserDataEntry {
     pub name: String,
     pub value: UserDataValue,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum UserDataValue {
     String(String),
     Integers(Vec<i32>),
@@ -89,7 +89,7 @@ impl UserDataValue {
 }
 
 /// System data currently understood by BFLYT.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum UserSystemData {
     /// Layout animation-tag names.
     AnimationTagNames(Vec<String>),

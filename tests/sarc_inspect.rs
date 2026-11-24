@@ -5,6 +5,7 @@ use std::io::Cursor;
 
 use binrw::{BinReaderExt, BinWriterExt};
 use common_bntx::synthetic_bntx;
+use smush_ui::bflan::{Bflan, Pat1, Section as BflanSection};
 use smush_ui::bflyt::{Bflyt, Section};
 use smush_ui::sarc::{
     SarcArchive, SarcEntry,
@@ -24,6 +25,40 @@ const BFLYT: &[u8] = &[
     0x43, 0x16, 0x00, 0x00, 0x43, 0x48, 0x00, 0x00,
     b'M', b'a', b'i', b'n', 0x00,
 ];
+
+#[test]
+fn expanded_archive_diff_reports_bflan_field_changes() {
+    let make = |name: &str| {
+        Bflan::new(vec![BflanSection::Pat1(Pat1 {
+            order: 1,
+            user_data: None,
+            start_frame: 0,
+            end_frame: 4,
+            child_binding: false,
+            name: name.into(),
+            groups: vec![],
+        })])
+        .to_bytes()
+        .unwrap()
+    };
+    let before = SarcArchive::new(vec![SarcEntry::new("anim/open.bflan", make("Open"))]);
+    let after = SarcArchive::new(vec![SarcEntry::new("anim/open.bflan", make("Close"))]);
+    assert_eq!(
+        inspect(&before).entries[0].detected_kind,
+        DetectedFileKind::Bflan
+    );
+    let difference = diff_with_options(
+        &before,
+        &after,
+        SarcDiffOptions {
+            expand_bflan: true,
+            ..Default::default()
+        },
+    );
+    let changes = &difference.changed[0].bflan.as_ref().unwrap().changes;
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].path, "/sections/0/Pat1/name");
+}
 
 #[test]
 fn inspection_reports_identity_hash_content_and_magic_separately() {
@@ -160,6 +195,7 @@ fn independent_expansion_flags_attach_typed_nested_diffs() {
         &after,
         SarcDiffOptions {
             expand_bflyt: true,
+            expand_bflan: false,
             expand_bntx: false,
         },
     );
@@ -182,6 +218,7 @@ fn independent_expansion_flags_attach_typed_nested_diffs() {
         &after,
         SarcDiffOptions {
             expand_bflyt: true,
+            expand_bflan: false,
             expand_bntx: true,
         },
     );
@@ -205,6 +242,7 @@ fn failed_nested_parse_falls_back_to_opaque_outer_change() {
         &after,
         SarcDiffOptions {
             expand_bflyt: false,
+            expand_bflan: false,
             expand_bntx: true,
         },
     );

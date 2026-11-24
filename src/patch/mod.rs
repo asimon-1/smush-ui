@@ -17,6 +17,7 @@ use self::{
     manifest::{PatchManifest, UpsertKind},
 };
 use crate::{
+    bflan::Bflan,
     bflyt::Bflyt,
     bntx::{Bntx, fs::PackOptions, patch::apply_bntx_patch},
     sarc::{
@@ -128,6 +129,18 @@ pub fn patch_archive(
                     ))
                 })?;
                 writer.into_inner()
+            }
+            UpsertKind::BflanJson => {
+                let path = root.join(safe_relative_path(&entry.source)?);
+                let source = read_source(&root, &entry.source, &context)?;
+                let animation: Bflan = parse_json_document(&path, &source)
+                    .map_err(|error| invalid_data(format!("{context}: {error}")))?;
+                animation.to_bytes().map_err(|error| {
+                    invalid_data(format!(
+                        "{context} source {}: failed to serialize BFLAN: {error}",
+                        path.display()
+                    ))
+                })?
             }
             UpsertKind::BntxBundle => {
                 let directory = source_directory(&root, &entry.source, &context)?;
