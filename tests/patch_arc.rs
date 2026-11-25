@@ -53,6 +53,7 @@ fn patches_bflan_json_without_changing_other_payloads() {
         child_binding: false,
         name: "Edited".into(),
         groups: vec![],
+        group_record_size: Default::default(),
     })]);
     let original = SarcArchive::new(vec![
         SarcEntry::new("anim/open.bflan", b"old".to_vec()),

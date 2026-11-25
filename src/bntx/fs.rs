@@ -3,6 +3,7 @@ use super::{
     Version, add_texture, create_bntx, decode_texture, encode_texture,
     image::validate_texture_profile, read_png, supports_image_format, validation, write_png,
 };
+use crate::common::{invalid_data, invalid_input, path_error};
 use atomic_write_file::AtomicWriteFile;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -650,19 +651,4 @@ fn metadata_if_exists(path: &Path, action: &str) -> io::Result<Option<fs::Metada
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(path_error(action, path, error)),
     }
-}
-
-fn invalid_input(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message.into())
-}
-
-fn invalid_data(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message.into())
-}
-
-fn path_error(action: &str, path: &Path, error: io::Error) -> io::Error {
-    io::Error::new(
-        error.kind(),
-        format!("failed to {action} {}: {error}", path.display()),
-    )
 }

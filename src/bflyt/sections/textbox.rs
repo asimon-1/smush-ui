@@ -3,7 +3,7 @@ use binrw::{BinRead, BinResult, Endian, binrw};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Seek, Write};
 
-use super::common::write_u32;
+use super::common::{align_up, write_u16, write_u32};
 use super::{Color, PaneInfo, Vec2};
 
 const TEXTBOX_HEADER_SIZE: usize = 0xA8;
@@ -172,22 +172,22 @@ impl TextboxData {
     fn layout(&self) -> TextboxDataLayout {
         let mut offset = TEXTBOX_HEADER_SIZE;
         let text_offset = offset;
-        offset += align(self.text_size(), 4);
+        offset += align_up(self.text_size(), 4);
 
         let call_name_offset = self.call_name.as_ref().map(|name| {
             let result = offset;
-            offset += align(name.len() + 1, 4);
+            offset += align_up(name.len() + 1, 4);
             result
         });
         let line_transform_offset = self.line_transforms.as_ref().map(|transforms| {
-            offset = align(offset, 4);
+            offset = align_up(offset, 4);
             let result = offset;
             offset += 1 + transforms.len() * 8;
             result
         });
         let per_character_transform_offset =
             self.per_character_transform.as_ref().map(|transform| {
-                offset = align(offset, 4);
+                offset = align_up(offset, 4);
                 let result = offset;
                 offset += transform.serialized_size();
                 result
@@ -215,10 +215,6 @@ impl PerCharacterTransform {
     fn serialized_size(&self) -> usize {
         32 + self.animation_data.as_ref().map_or(0, Vec::len)
     }
-}
-
-fn align(size: usize, alignment: usize) -> usize {
-    (size + alignment - 1) & !(alignment - 1)
 }
 
 fn read_textbox_data<R: Read + Seek>(
@@ -336,14 +332,14 @@ fn write_textbox_data<W: Write + Seek>(
     for unit in data.text.encode_utf16().chain(std::iter::once(0)) {
         write_u16(&mut bytes, unit, endian);
     }
-    bytes.resize(align(bytes.len(), 4), 0);
+    bytes.resize(align_up(bytes.len(), 4), 0);
     if let Some(name) = &data.call_name {
         bytes.extend(name.bytes());
         bytes.push(0);
-        bytes.resize(align(bytes.len(), 4), 0);
+        bytes.resize(align_up(bytes.len(), 4), 0);
     }
     if let Some(transforms) = &data.line_transforms {
-        bytes.resize(align(bytes.len(), 4), 0);
+        bytes.resize(align_up(bytes.len(), 4), 0);
         bytes.push(transforms.len() as u8);
         for transform in transforms {
             write_u32(&mut bytes, transform.offset.to_bits(), endian);
@@ -353,7 +349,7 @@ fn write_textbox_data<W: Write + Seek>(
         }
     }
     if let Some(transform) = &data.per_character_transform {
-        bytes.resize(align(bytes.len(), 4), 0);
+        bytes.resize(align_up(bytes.len(), 4), 0);
         write_u32(&mut bytes, transform.curve_time_offset.to_bits(), endian);
         write_u32(&mut bytes, transform.curve_time_width.to_bits(), endian);
         bytes.push(u8::from(transform.loop_mode).value());
@@ -374,14 +370,6 @@ fn write_textbox_data<W: Write + Seek>(
     }
     writer.write_all(&bytes)?;
     Ok(())
-}
-
-fn write_u16(bytes: &mut Vec<u8>, value: u16, endian: Endian) {
-    bytes.extend(if endian == Endian::Little {
-        value.to_le_bytes()
-    } else {
-        value.to_be_bytes()
-    });
 }
 
 impl Textbox {

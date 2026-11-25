@@ -8,6 +8,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use crate::common::{invalid_data, invalid_input};
+
 use super::{
     Bntx, ChannelMode, ImageFormat, NewTextureFormat, Texture, TextureInfo, TextureProfile,
     UserData,
@@ -533,12 +535,4 @@ pub(crate) fn apply_bntx_patch(original: &Bntx, patch_directory: &Path) -> io::R
     validation::validate(&result)
         .map_err(|error| invalid_data(format!("{}: {error}", manifest_path.display())))?;
     Ok(result)
-}
-
-fn invalid_input(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message.into())
-}
-
-fn invalid_data(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message.into())
 }

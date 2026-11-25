@@ -4,7 +4,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::sarc::fs::validate_portable_component;
+use crate::{
+    common::{invalid_data, invalid_input, path_error},
+    sarc::fs::validate_portable_component,
+};
 
 pub(super) fn read_json_document<T: DeserializeOwned>(path: &Path) -> io::Result<T> {
     validate_json_extension(path)?;
@@ -124,17 +127,4 @@ fn read_regular_file(path: &Path, label: &str) -> io::Result<Vec<u8>> {
         )));
     }
     fs::read(path).map_err(|error| path_error("read patch input", path, error))
-}
-
-fn invalid_input(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message.into())
-}
-fn invalid_data(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message.into())
-}
-fn path_error(action: &str, path: &Path, error: io::Error) -> io::Error {
-    io::Error::new(
-        error.kind(),
-        format!("failed to {action} {}: {error}", path.display()),
-    )
 }

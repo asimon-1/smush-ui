@@ -2,13 +2,15 @@ use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 use bilge::prelude::*;
 use binrw::{
-    BinReaderExt, BinResult, BinWriterExt, Endian, NullString, binrw, file_ptr::parse_from_iter,
+    BinRead, BinReaderExt, BinResult, BinWriterExt, Endian, NullString, VecArgs, binrw,
+    file_ptr::parse_from_iter,
 };
 use serde::{Deserialize, Serialize};
 
-use super::{
-    align4, bytes_at, checked_u32, invalid, patch_relative, patch_u32, read_cstr, read_fixed,
-    u32_at, write_fixed,
+use crate::bflyt::sections::common::{fixed_string_to_string, string_to_fixed_string};
+
+use super::common::{
+    align4, bytes_at, checked_u32, invalid, patch_relative, patch_u32, read_cstr, u32_at,
 };
 
 #[binrw]
@@ -52,6 +54,8 @@ pub struct Track {
 pub struct AnimationTag {
     pub kind: String,
     pub tracks: Vec<Track>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target2_prefix: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -197,8 +201,9 @@ fn read_entries<R: Read + Seek>(
     }
     let data = section_bytes(reader, start, size)?;
     let mut entries = Vec::with_capacity(offsets.len());
-    for relative in offsets {
-        entries.push(parse_entry(&data, relative as usize)?);
+    for (index, relative) in offsets.iter().enumerate() {
+        let end = offsets.get(index + 1).copied().unwrap_or(size) as usize;
+        entries.push(parse_entry(&data, *relative as usize, end)?);
     }
     Ok(entries)
 }
@@ -221,102 +226,143 @@ fn write_entries<W: Write + Seek>(
     Ok(())
 }
 
-fn offset(base: usize, index: usize, stride: usize) -> BinResult<usize> {
-    base.checked_add(
-        index
-            .checked_mul(stride)
-            .ok_or_else(|| invalid(base, "offset overflow"))?,
-    )
-    .ok_or_else(|| invalid(base, "offset overflow"))
-}
-
-fn parse_entry(data: &[u8], start: usize) -> BinResult<AnimationEntry> {
-    let header: EntryHeader = Cursor::new(bytes_at(data, start, 32)?).read_le()?;
-    let name = read_fixed(&header.name, 0, 28)?;
-    let tag_count = header.tag_count as usize;
-    let target = header.target;
-    let mut tags = Vec::with_capacity(tag_count);
-    for i in 0..tag_count {
-        let relative = u32_at(data, offset(start + 32, i, 4)?)? as usize;
-        let tag_start = start
-            .checked_add(relative)
-            .ok_or_else(|| invalid(start, "tag offset overflow"))?;
-        tags.push(parse_tag(data, tag_start, target, start)?);
+fn parse_entry(data: &[u8], start: usize, end: usize) -> BinResult<AnimationEntry> {
+    if end > data.len() || end < start {
+        return Err(invalid(start, "invalid animation entry bounds"));
     }
-    if target == 2 {
-        let link = u32_at(data, offset(start + 32, tag_count, 4)?)? as usize;
+    let mut reader = Cursor::new(bytes_at(data, start, end - start)?);
+    let EntryTable { header, offsets } = reader.read_le()?;
+    let name = header.name;
+    let target = header.target;
+    let table_end = start + reader.position() as usize;
+    let mut tag_starts = Vec::with_capacity(offsets.len());
+    for relative in offsets {
+        let tag_start = start
+            .checked_add(relative as usize)
+            .ok_or_else(|| invalid(start, "tag offset overflow"))?;
+        if tag_start >= end {
+            return Err(invalid(tag_start, "tag outside animation entry"));
+        }
+        tag_starts.push(tag_start);
+    }
+    let target2_link = if target == 2 && !tag_starts.is_empty() {
+        let first = tag_starts[0];
+        if first < table_end {
+            return Err(invalid(first, "target-2 tag overlaps offset table"));
+        }
+        first != table_end
+    } else {
+        false
+    };
+    if target == 2 && target2_link {
+        let link = u32_at(data, table_end)? as usize;
         let link_pos = start
             .checked_add(link)
             .ok_or_else(|| invalid(start, "target-2 link overflow"))?;
-        bytes_at(data, link_pos, 4)?;
+        if link_pos
+            .checked_add(4)
+            .is_none_or(|position| position > end)
+        {
+            return Err(invalid(link_pos, "target-2 link outside animation entry"));
+        }
+    }
+    let mut tags = Vec::with_capacity(tag_starts.len());
+    for (index, tag_start) in tag_starts.iter().enumerate() {
+        let tag_end = tag_starts.get(index + 1).copied().unwrap_or(end);
+        tags.push(parse_tag(data, *tag_start, tag_end, target, start)?);
+    }
+    if target == 2 && target2_link != has_fleu_name(&tags) {
+        return Err(invalid(
+            start,
+            "target-2 link does not match FLEU name metadata",
+        ));
     }
     Ok(AnimationEntry { name, target, tags })
 }
 
-fn parse_tag(data: &[u8], start: usize, target: u8, entry_start: usize) -> BinResult<AnimationTag> {
-    let tag_start = if target == 2 {
-        let declared = u32_at(data, start)? as usize;
-        if declared != start + 4 - entry_start {
-            return Err(invalid(start, "target-2 tag link does not point to tag"));
-        }
-        start + 4
+fn has_fleu_name(tags: &[AnimationTag]) -> bool {
+    tags.iter()
+        .any(|tag| tag.kind == "FLEU" && tag.tracks.iter().any(|track| track.name.is_some()))
+}
+
+fn parse_tag(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    target: u8,
+    entry_start: usize,
+) -> BinResult<AnimationTag> {
+    let (tag_start, target2_prefix) = if target == 2 {
+        let declared = u32_at(data, start)?;
+        let expected = checked_u32(start + 4 - entry_start, start)?;
+        (start + 4, (declared != expected).then_some(declared))
     } else {
-        start
+        (start, None)
     };
-    let header: TagHeader = Cursor::new(bytes_at(data, tag_start, 8)?).read_le()?;
+    if tag_start
+        .checked_add(8)
+        .is_none_or(|position| position > end)
+    {
+        return Err(invalid(tag_start, "tag header outside animation entry"));
+    }
+    let mut reader = Cursor::new(bytes_at(data, tag_start, end - tag_start)?);
+    let TagTable { header, offsets } = reader.read_le()?;
     let kind = std::str::from_utf8(&header.kind)
         .map_err(|_| invalid(tag_start, "invalid animation tag"))?
         .to_owned();
-    let count = header.track_count as usize;
-    let mut tracks = Vec::with_capacity(count);
-    for i in 0..count {
-        let relative = u32_at(data, offset(tag_start + 8, i, 4)?)? as usize;
+    let mut track_starts = Vec::with_capacity(offsets.len());
+    for relative in offsets {
         let track_start = tag_start
-            .checked_add(relative)
+            .checked_add(relative as usize)
             .ok_or_else(|| invalid(tag_start, "track offset overflow"))?;
-        tracks.push(parse_track(data, track_start, &kind)?);
+        if track_start >= end {
+            return Err(invalid(track_start, "track outside animation tag"));
+        }
+        track_starts.push(track_start);
     }
-    Ok(AnimationTag { kind, tracks })
+    let mut tracks = Vec::with_capacity(track_starts.len());
+    for (index, track_start) in track_starts.iter().enumerate() {
+        let track_end = track_starts.get(index + 1).copied().unwrap_or(end);
+        tracks.push(parse_track(data, *track_start, track_end, &kind)?);
+    }
+    Ok(AnimationTag {
+        kind,
+        tracks,
+        target2_prefix,
+    })
 }
 
-fn parse_track(data: &[u8], start: usize, tag: &str) -> BinResult<Track> {
+fn parse_track(data: &[u8], start: usize, record_end: usize, tag: &str) -> BinResult<Track> {
     let header: TrackHeader = Cursor::new(bytes_at(data, start, 12)?).read_le()?;
     let count = header.key_count as usize;
-    let key_offset = header.key_offset as usize;
     let key_start = start
-        .checked_add(key_offset)
+        .checked_add(header.key_offset as usize)
         .ok_or_else(|| invalid(start, "key offset overflow"))?;
-    let curve = match header.curve_kind {
-        1 => {
-            let mut keys = Vec::with_capacity(count.min(data.len() / 8));
-            for i in 0..count {
-                let pos = offset(key_start, i, 8)?;
-                keys.push(Cursor::new(bytes_at(data, pos, 8)?).read_le()?);
-            }
-            Curve::Step(keys)
-        }
-        2 => {
-            let mut keys = Vec::with_capacity(count.min(data.len() / 12));
-            for i in 0..count {
-                let pos = offset(key_start, i, 12)?;
-                keys.push(Cursor::new(bytes_at(data, pos, 12)?).read_le()?);
-            }
-            Curve::Hermite(keys)
-        }
+    let stride = match header.curve_kind {
+        1 => 8,
+        2 => 12,
         _ => return Err(invalid(start + 2, "unsupported BFLAN curve type")),
     };
     let key_len = count
-        .checked_mul(if header.curve_kind == 1 { 8 } else { 12 })
+        .checked_mul(stride)
         .ok_or_else(|| invalid(start, "key count overflow"))?;
     let end = key_start
         .checked_add(key_len)
         .ok_or_else(|| invalid(start, "key offset overflow"))?;
-    let name = if tag == "FLEU" {
-        let name_offset = u32_at(data, end)? as usize;
+    if end > record_end {
+        return Err(invalid(end, "animation keys exceed track bounds"));
+    }
+    let mut reader = Cursor::new(bytes_at(data, key_start, key_len)?);
+    let curve = match header.curve_kind {
+        1 => Curve::Step(reader.read_le_args(VecArgs { count, inner: () })?),
+        _ => Curve::Hermite(reader.read_le_args(VecArgs { count, inner: () })?),
+    };
+    let name = if tag == "FLEU" && end < record_end {
+        let name_offset = u32_at(&data[..record_end], end)? as usize;
         let name_start = end
             .checked_add(name_offset)
             .ok_or_else(|| invalid(end, "FLEU name offset overflow"))?;
-        Some(read_cstr(data, name_start)?)
+        Some(read_cstr(&data[..record_end], name_start)?)
     } else {
         None
     };
@@ -330,10 +376,8 @@ fn parse_track(data: &[u8], start: usize, tag: &str) -> BinResult<Track> {
 
 fn write_entry(out: &mut Vec<u8>, entry: &AnimationEntry) -> BinResult<()> {
     let start = out.len();
-    let mut name = Vec::new();
-    write_fixed(&mut name, &entry.name, 28)?;
     let header = EntryHeader {
-        name: name.try_into().unwrap(),
+        name: entry.name.clone(),
         tag_count: u8::try_from(entry.tags.len())
             .map_err(|_| invalid(start, "too many animation tags"))?,
         target: entry.target,
@@ -343,7 +387,7 @@ fn write_entry(out: &mut Vec<u8>, entry: &AnimationEntry) -> BinResult<()> {
     out.extend_from_slice(&writer.into_inner());
     let table = out.len();
     out.resize(out.len() + 4 * entry.tags.len(), 0);
-    let link_patch = if entry.target == 2 {
+    let link_patch = if entry.target == 2 && has_fleu_name(&entry.tags) {
         let patch = out.len();
         out.extend_from_slice(&0u32.to_le_bytes());
         Some(patch)
@@ -377,9 +421,16 @@ fn write_tag(
     }
     if target == 2 {
         out.extend_from_slice(&0u32.to_le_bytes());
-        let prefix = checked_u32(out.len() - entry_start, out.len() - 4)?;
+        let prefix = tag
+            .target2_prefix
+            .unwrap_or(checked_u32(out.len() - entry_start, out.len() - 4)?);
         let end = out.len();
         out[end - 4..end].copy_from_slice(&prefix.to_le_bytes());
+    } else if tag.target2_prefix.is_some() {
+        return Err(invalid(
+            out.len(),
+            "target-2 prefix on another animation target",
+        ));
     }
     let start = out.len();
     let header = TagHeader {
@@ -414,28 +465,15 @@ fn write_track(out: &mut Vec<u8>, track: &Track, tag: &str) -> BinResult<Option<
     };
     let mut writer = Cursor::new(Vec::new());
     writer.write_le(&header)?;
-    out.extend_from_slice(&writer.into_inner());
     match &track.curve {
-        Curve::Step(keys) => {
-            for key in keys {
-                writer = Cursor::new(Vec::new());
-                writer.write_le(key)?;
-                out.extend_from_slice(&writer.into_inner());
-            }
-        }
-        Curve::Hermite(keys) => {
-            for key in keys {
-                writer = Cursor::new(Vec::new());
-                writer.write_le(key)?;
-                out.extend_from_slice(&writer.into_inner());
-            }
-        }
+        Curve::Step(keys) => writer.write_le(keys)?,
+        Curve::Hermite(keys) => writer.write_le(keys)?,
     }
+    out.extend_from_slice(&writer.into_inner());
     if tag == "FLEU" {
-        let name = track
-            .name
-            .as_deref()
-            .ok_or_else(|| invalid(out.len(), "FLEU track needs a name"))?;
+        let Some(name) = track.name.as_deref() else {
+            return Ok(None);
+        };
         let link_target = out.len();
         out.extend_from_slice(&4u32.to_le_bytes());
         out.extend_from_slice(name.as_bytes());
@@ -452,10 +490,20 @@ fn write_track(out: &mut Vec<u8>, track: &Track, tag: &str) -> BinResult<Option<
 #[binrw]
 #[brw(little)]
 struct EntryHeader {
-    name: [u8; 28],
+    #[br(try_map = fixed_string_to_string::<28>)]
+    #[bw(try_map = string_to_fixed_string::<28>)]
+    name: String,
     tag_count: u8,
     #[brw(pad_after = 2)]
     target: u8,
+}
+
+#[derive(BinRead)]
+#[br(little)]
+struct EntryTable {
+    header: EntryHeader,
+    #[br(count = header.tag_count)]
+    offsets: Vec<u32>,
 }
 
 #[binrw]
@@ -464,6 +512,14 @@ struct TagHeader {
     kind: [u8; 4],
     #[brw(pad_after = 3)]
     track_count: u8,
+}
+
+#[derive(BinRead)]
+#[br(little)]
+struct TagTable {
+    header: TagHeader,
+    #[br(count = header.track_count)]
+    offsets: Vec<u32>,
 }
 
 #[binrw]

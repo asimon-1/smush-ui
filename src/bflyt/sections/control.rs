@@ -1,4 +1,7 @@
-use super::common::{fixed_string_to_string, string_to_fixed_string};
+use super::common::{
+    align_up, fixed_string_to_string, read_null_string_at, string_to_fixed_string, write_u16,
+    write_u32, write_u32_at,
+};
 use binrw::{BinRead, BinResult, Endian, Error, NullString, binrw};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Seek, Write};
@@ -14,20 +17,22 @@ pub struct ControlData {
 }
 impl ControlData {
     fn payload_size(&self) -> usize {
-        let align_to_four_bytes = |size| (size + 3) & !3;
         let null_terminated_strings_size =
             |strings: &[String]| strings.iter().map(|string| string.len() + 1).sum::<usize>();
-        20 + align_to_four_bytes(self.control_name.len() + 1)
-            + align_to_four_bytes(self.reserve0_name.len() + 1)
+        20 + align_up(self.control_name.len() + 1, 4)
+            + align_up(self.reserve0_name.len() + 1, 4)
             + 24 * self.pane_bindings.len()
-            + align_to_four_bytes(
+            + align_up(
                 4 * self.core_anims.len() + null_terminated_strings_size(&self.core_anims),
+                4,
             )
-            + align_to_four_bytes(
+            + align_up(
                 4 * self.pane_names.len() + null_terminated_strings_size(&self.pane_names),
+                4,
             )
-            + align_to_four_bytes(
+            + align_up(
                 4 * self.anim_names.len() + null_terminated_strings_size(&self.anim_names),
+                4,
             )
     }
 }
@@ -69,15 +74,6 @@ fn read_control_data<R: Read + Seek>(
             pos: 0,
             err: Box::new(x),
         })?;
-    let read_string_at = |offset: usize| -> BinResult<String> {
-        let mut string_reader = Cursor::new(&payload[offset..]);
-        NullString::read_options(&mut string_reader, endian, ())?
-            .try_into()
-            .map_err(|x| Error::Custom {
-                pos: offset as u64,
-                err: Box::new(x),
-            })
-    };
     let read_fixed_name_at = |offset: usize| {
         fixed_string_to_string::<24>(payload[offset..offset + 24].try_into().unwrap()).map_err(
             |error| Error::Custom {
@@ -98,13 +94,13 @@ fn read_control_data<R: Read + Seek>(
                 } else {
                     u32::from_be_bytes(bytes)
                 } as usize;
-                read_string_at(table_offset + string_offset)
+                read_null_string_at(&payload, table_offset + string_offset, endian)
             })
             .collect()
     };
     Ok(ControlData {
         control_name,
-        reserve0_name: read_string_at(reserve0_offset)?,
+        reserve0_name: read_null_string_at(&payload, reserve0_offset, endian)?,
         pane_bindings: (0..pane_count)
             .map(|index| read_fixed_name_at(bindings_offset + index * 24))
             .collect::<BinResult<_>>()?,
@@ -114,20 +110,6 @@ fn read_control_data<R: Read + Seek>(
     })
 }
 
-fn write_u32(bytes: &mut Vec<u8>, value: u32, endian: Endian) {
-    bytes.extend_from_slice(&if endian == Endian::Little {
-        value.to_le_bytes()
-    } else {
-        value.to_be_bytes()
-    });
-}
-fn write_u16(bytes: &mut Vec<u8>, value: u16, endian: Endian) {
-    bytes.extend_from_slice(&if endian == Endian::Little {
-        value.to_le_bytes()
-    } else {
-        value.to_be_bytes()
-    });
-}
 fn write_control_data<W: Write + Seek>(
     data: &ControlData,
     writer: &mut W,
@@ -135,17 +117,16 @@ fn write_control_data<W: Write + Seek>(
     _: (),
 ) -> BinResult<()> {
     let mut p = vec![0; 20];
-    let align_to_four_bytes = |bytes: &mut Vec<u8>| bytes.resize((bytes.len() + 3) & !3, 0);
     let write_null_terminated_string = |bytes: &mut Vec<u8>, string: &str| {
         bytes.extend(string.bytes());
         bytes.push(0)
     };
     let section_relative_offset = |payload_offset: usize| (payload_offset + 8) as u32;
     write_null_terminated_string(&mut p, &data.control_name);
-    align_to_four_bytes(&mut p);
+    p.resize(align_up(p.len(), 4), 0);
     let reserve0_offset = section_relative_offset(p.len());
     write_null_terminated_string(&mut p, &data.reserve0_name);
-    align_to_four_bytes(&mut p);
+    p.resize(align_up(p.len(), 4), 0);
     let bindings_offset = section_relative_offset(p.len());
     for binding in &data.pane_bindings {
         p.extend(
@@ -160,16 +141,10 @@ fn write_control_data<W: Write + Seek>(
         bytes.resize(table_start + strings.len() * 4, 0);
         for (index, string) in strings.iter().enumerate() {
             let string_offset = (bytes.len() - table_start) as u32;
-            let encoded_offset = if endian == Endian::Little {
-                string_offset.to_le_bytes()
-            } else {
-                string_offset.to_be_bytes()
-            };
-            bytes[table_start + index * 4..table_start + index * 4 + 4]
-                .copy_from_slice(&encoded_offset);
+            write_u32_at(bytes, table_start + index * 4, string_offset, endian);
             write_null_terminated_string(bytes, string)
         }
-        align_to_four_bytes(bytes);
+        bytes.resize(align_up(bytes.len(), 4), 0);
         section_relative_offset(table_start)
     };
     let _core_table_offset = write_string_table(&mut p, &data.core_anims);

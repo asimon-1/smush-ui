@@ -37,6 +37,7 @@ fn expanded_archive_diff_reports_bflan_field_changes() {
             child_binding: false,
             name: name.into(),
             groups: vec![],
+            group_record_size: Default::default(),
         })])
         .to_bytes()
         .unwrap()

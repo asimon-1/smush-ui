@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bflyt::sections::common::{fixed_string_to_string, string_to_fixed_string};
 
-use super::{checked_u32, invalid};
+use super::common::{checked_u32, invalid};
 
 #[binrw]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

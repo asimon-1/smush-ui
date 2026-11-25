@@ -1,19 +1,62 @@
 use std::io::{Read, Seek, Write};
 
-use binrw::{BinResult, Endian, NullString, binrw};
+use binrw::{BinReaderExt, BinResult, BinWriterExt, Endian, NullString, binrw};
 use serde::{Deserialize, Serialize};
 
 use crate::bflyt::sections::common::{fixed_string_to_string, string_to_fixed_string};
 use crate::bflyt::sections::user::{UserData, UserDataEntry, UserDataValue};
 
-use super::{align4, bytes_at, checked_u32, invalid, patch_relative, read_cstr, u16_at, u32_at};
+use super::common::{
+    align4, bytes_at, checked_u32, invalid, patch_relative, read_cstr, u16_at, u32_at,
+};
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum GroupRecordSize {
+    Compact,
+    #[default]
+    Full,
+}
+
+impl GroupRecordSize {
+    fn bytes(self) -> usize {
+        match self {
+            Self::Compact => 28,
+            Self::Full => 36,
+        }
+    }
+
+    fn is_full(&self) -> bool {
+        *self == Self::Full
+    }
+}
+
+impl From<GroupRecordSize> for u8 {
+    fn from(size: GroupRecordSize) -> Self {
+        size.bytes() as u8
+    }
+}
+
+impl TryFrom<u8> for GroupRecordSize {
+    type Error = String;
+
+    fn try_from(size: u8) -> Result<Self, Self::Error> {
+        match size {
+            28 => Ok(Self::Compact),
+            36 => Ok(Self::Full),
+            _ => Err(format!(
+                "PAT1 group record size must be 28 or 36, got {size}"
+            )),
+        }
+    }
+}
 
 #[binrw]
 #[brw(little, magic = b"pat1")]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Pat1 {
     #[br(temp)]
-    #[bw(calc = pat1_size(name, groups, user_data)?)]
+    #[bw(calc = pat1_size(name, groups, user_data, *group_record_size)?)]
     size: u32,
     pub order: u16,
     #[br(temp)]
@@ -24,8 +67,12 @@ pub struct Pat1 {
     #[bw(calc = pat1_groups_offset(name)?)]
     groups_offset: u32,
     #[br(temp)]
-    #[bw(calc = pat1_user_data_offset(name, groups, user_data)?)]
+    #[bw(calc = pat1_user_data_offset(name, groups, user_data, *group_record_size)?)]
     user_data_offset: u32,
+    #[serde(default, skip_serializing_if = "GroupRecordSize::is_full")]
+    #[br(try_calc = infer_group_record_size(size, group_count, groups_offset, user_data_offset))]
+    #[bw(ignore)]
+    pub group_record_size: GroupRecordSize,
     pub start_frame: i16,
     pub end_frame: i16,
     #[br(try_map = |value: u8| if value <= 1 { Ok(value != 0) } else { Err(invalid(28, "invalid PAT1 child-binding flag")) })]
@@ -35,11 +82,11 @@ pub struct Pat1 {
     #[br(try_map = |name: NullString| String::try_from(name), align_after = 4)]
     #[bw(map = |name: &String| NullString::from(name.as_str()), align_after = 4)]
     pub name: String,
-    #[br(count = group_count, assert(groups_offset == pat1_groups_offset(&name)?, "PAT1 group offset does not follow name"), try_map = |groups: Vec<[u8; 36]>| groups.into_iter().map(fixed_string_to_string::<36>).collect::<Result<Vec<_>, _>>())]
-    #[bw(try_map = |groups: &Vec<String>| groups.iter().map(string_to_fixed_string::<36>).collect::<Result<Vec<_>, _>>())]
+    #[br(parse_with = read_groups, args(group_count, group_record_size, groups_offset, pat1_groups_offset(&name)?))]
+    #[bw(write_with = write_groups, args(*group_record_size))]
     pub groups: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[br(parse_with = read_user_data, args(size, user_data_offset, pat1_body_end(&name, &groups)?))]
+    #[br(parse_with = read_user_data, args(size, user_data_offset, pat1_body_end(&name, &groups, group_record_size)?))]
     #[bw(write_with = write_user_data)]
     pub user_data: Option<UserData>,
 }
@@ -58,13 +105,39 @@ fn pat1_groups_offset(name: &str) -> BinResult<u32> {
     )
 }
 
-fn pat1_body_end(name: &str, groups: &[String]) -> BinResult<u32> {
+fn infer_group_record_size(
+    size: u32,
+    count: u16,
+    groups_offset: u32,
+    user_data_offset: u32,
+) -> BinResult<GroupRecordSize> {
+    let end = if user_data_offset == 0 {
+        size
+    } else {
+        user_data_offset
+    };
+    let length = end
+        .checked_sub(groups_offset)
+        .ok_or_else(|| invalid(16, "PAT1 group records exceed section"))? as usize;
+    if count == 0 && length == 0 || length == count as usize * 36 {
+        Ok(GroupRecordSize::Full)
+    } else if length == count as usize * 28 {
+        Ok(GroupRecordSize::Compact)
+    } else {
+        Err(invalid(
+            16,
+            "PAT1 group records must be 28 or 36 bytes each",
+        ))
+    }
+}
+
+fn pat1_body_end(name: &str, groups: &[String], record_size: GroupRecordSize) -> BinResult<u32> {
     let base = pat1_groups_offset(name)? as usize;
     checked_u32(
         base.checked_add(
             groups
                 .len()
-                .checked_mul(36)
+                .checked_mul(record_size.bytes())
                 .ok_or_else(|| invalid(16, "PAT1 group size overflow"))?,
         )
         .ok_or_else(|| invalid(16, "PAT1 group size overflow"))?,
@@ -76,16 +149,22 @@ fn pat1_user_data_offset(
     name: &str,
     groups: &[String],
     user_data: &Option<UserData>,
+    record_size: GroupRecordSize,
 ) -> BinResult<u32> {
     if user_data.is_some() {
-        pat1_body_end(name, groups)
+        pat1_body_end(name, groups, record_size)
     } else {
         Ok(0)
     }
 }
 
-fn pat1_size(name: &str, groups: &[String], user_data: &Option<UserData>) -> BinResult<u32> {
-    let mut size = pat1_body_end(name, groups)? as usize;
+fn pat1_size(
+    name: &str,
+    groups: &[String],
+    user_data: &Option<UserData>,
+    record_size: GroupRecordSize,
+) -> BinResult<u32> {
+    let mut size = pat1_body_end(name, groups, record_size)? as usize;
     if let Some(data) = user_data {
         let mut bytes = Vec::new();
         write_string_user_data(&mut bytes, data)?;
@@ -94,6 +173,43 @@ fn pat1_size(name: &str, groups: &[String], user_data: &Option<UserData>) -> Bin
             .ok_or_else(|| invalid(4, "PAT1 size overflow"))?;
     }
     checked_u32(size, 4)
+}
+
+fn read_groups<R: Read + Seek>(
+    reader: &mut R,
+    _: Endian,
+    (count, record_size, offset, expected): (u16, GroupRecordSize, u32, u32),
+) -> BinResult<Vec<String>> {
+    if offset != expected {
+        return Err(invalid(16, "PAT1 group offset does not follow name"));
+    }
+    let mut groups = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let position = reader.stream_position()? as usize;
+        let group = match record_size {
+            GroupRecordSize::Compact => fixed_string_to_string::<28>(reader.read_le()?),
+            GroupRecordSize::Full => fixed_string_to_string::<36>(reader.read_le()?),
+        }
+        .map_err(|_| invalid(position, "invalid PAT1 group name"))?;
+        groups.push(group);
+    }
+    Ok(groups)
+}
+
+#[allow(clippy::ptr_arg)] // binrw passes the Vec field directly.
+fn write_groups<W: Write + Seek>(
+    groups: &Vec<String>,
+    writer: &mut W,
+    _: Endian,
+    (record_size,): (GroupRecordSize,),
+) -> BinResult<()> {
+    for group in groups {
+        match record_size {
+            GroupRecordSize::Compact => writer.write_le(&string_to_fixed_string::<28>(group)?)?,
+            GroupRecordSize::Full => writer.write_le(&string_to_fixed_string::<36>(group)?)?,
+        }
+    }
+    Ok(())
 }
 
 fn read_user_data<R: Read + Seek>(

@@ -1,4 +1,5 @@
 use super::{MAX_ENTRIES, SarcArchive, SarcEntry};
+use crate::common::{invalid_input, path_error};
 use atomic_write_file::AtomicWriteFile;
 use std::{
     fs::{self, OpenOptions},
@@ -310,15 +311,4 @@ fn relative_path_to_archive_name(path: &Path) -> io::Result<String> {
 
 fn invalid_archive_name(name: &str, reason: &str) -> io::Error {
     invalid_input(format!("invalid archive entry path {name:?}: {reason}"))
-}
-
-fn invalid_input(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message.into())
-}
-
-fn path_error(action: &str, path: &Path, error: io::Error) -> io::Error {
-    io::Error::new(
-        error.kind(),
-        format!("failed to {action} {}: {error}", path.display()),
-    )
 }

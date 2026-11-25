@@ -19,6 +19,7 @@ fn sample() -> Bflan {
             child_binding: false,
             name: "Open".into(),
             groups: vec!["main".into()],
+            group_record_size: Default::default(),
         }),
         Section::Pai1(Pai1 {
             frame_count: 10,

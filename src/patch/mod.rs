@@ -9,6 +9,8 @@ use std::{
 
 use binrw::BinWriterExt;
 
+use crate::common::{invalid_data, invalid_input, path_error};
+
 use self::{
     fs::{
         manifest_directory, parse_json_document, read_json_document, read_source,
@@ -216,17 +218,4 @@ fn require_original(archive: &SarcArchive, name: &str, context: &str) -> io::Res
         ));
     }
     Ok(())
-}
-
-fn invalid_input(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message.into())
-}
-fn invalid_data(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message.into())
-}
-fn path_error(action: &str, path: &Path, error: io::Error) -> io::Error {
-    io::Error::new(
-        error.kind(),
-        format!("failed to {action} {}: {error}", path.display()),
-    )
 }

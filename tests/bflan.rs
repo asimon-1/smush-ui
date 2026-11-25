@@ -3,7 +3,8 @@ use std::{fs, io::Cursor, path::Path};
 use binrw::{BinReaderExt, BinWriterExt};
 
 use smush_ui::bflan::{
-    AnimationEntry, AnimationTag, Bflan, Curve, Pai1, PaiFlags, Section, StepKey, Track,
+    AnimationEntry, AnimationTag, Bflan, Curve, GroupRecordSize, Pai1, PaiFlags, Section, StepKey,
+    Track,
 };
 
 #[test]
@@ -57,6 +58,7 @@ fn public_sections_use_binrw_from_an_aligned_stream_position() {
         child_binding: false,
         name: "Open".into(),
         groups: vec!["main".into()],
+        group_record_size: Default::default(),
     };
     let pah = Pah1 {
         shares: vec![SharedAnimation {
@@ -84,6 +86,93 @@ fn public_sections_use_binrw_from_an_aligned_stream_position() {
     assert_eq!(stream.read_le::<Pat1>().unwrap(), pat);
     assert_eq!(stream.read_le::<Pah1>().unwrap(), pah);
     assert_eq!(stream.read_le::<Pai1>().unwrap(), pai);
+}
+
+#[test]
+fn sections_keep_their_own_alignment_after_an_odd_sized_unknown_section() {
+    use smush_ui::bflan::Pat1;
+
+    let animation = Bflan::new(vec![
+        Section::Unknown {
+            magic: "test".into(),
+            data: vec![1],
+        },
+        Section::Pat1(Pat1 {
+            order: 1,
+            user_data: None,
+            start_frame: 0,
+            end_frame: 1,
+            child_binding: false,
+            name: "Open".into(),
+            groups: vec!["main".into()],
+            group_record_size: Default::default(),
+        }),
+    ]);
+    let bytes = animation.to_bytes().unwrap();
+    assert_eq!(Bflan::from_bytes(&bytes).unwrap(), animation);
+    assert_eq!(
+        Bflan::from_bytes(&bytes).unwrap().to_bytes().unwrap(),
+        bytes
+    );
+}
+
+#[test]
+fn compact_pat1_groups_round_trip_through_binary_and_json() {
+    use smush_ui::bflan::Pat1;
+
+    let animation = Bflan::new(vec![Section::Pat1(Pat1 {
+        order: 1,
+        user_data: None,
+        start_frame: 0,
+        end_frame: 5,
+        child_binding: false,
+        name: "Open".into(),
+        groups: vec!["main".into(), "other".into()],
+        group_record_size: GroupRecordSize::Compact,
+    })]);
+    let bytes = animation.to_bytes().unwrap();
+    assert_eq!(u32::from_le_bytes(bytes[24..28].try_into().unwrap()), 96);
+    assert_eq!(Bflan::from_bytes(&bytes).unwrap(), animation);
+    let json = serde_jsonc2::to_vec_pretty(&animation).unwrap();
+    assert!(String::from_utf8_lossy(&json).contains("\"group_record_size\": 28"));
+    let decoded: Bflan = serde_jsonc2::from_slice(&json).unwrap();
+    assert_eq!(decoded.to_bytes().unwrap(), bytes);
+
+    let mut bad_count = bytes;
+    bad_count[30..32].copy_from_slice(&3u16.to_le_bytes());
+    assert!(Bflan::from_bytes(&bad_count).is_err());
+}
+
+#[test]
+fn compact_target_two_entry_round_trips_without_a_fleu_name() {
+    let animation = Bflan::new(vec![Section::Pai1(Pai1 {
+        frame_count: 1,
+        flags: PaiFlags::default(),
+        textures: Vec::new(),
+        entries: vec![AnimationEntry {
+            name: "user".into(),
+            target: 2,
+            tags: vec![AnimationTag {
+                kind: "FLEU".into(),
+                tracks: vec![Track {
+                    index: 0,
+                    target: 0,
+                    curve: Curve::Hermite(vec![smush_ui::bflan::HermiteKey {
+                        frame: 0.0,
+                        value: 0.0,
+                        slope: 0.0,
+                    }]),
+                    name: None,
+                }],
+                target2_prefix: Some(44),
+            }],
+        }],
+    })]);
+    let bytes = animation.to_bytes().unwrap();
+    assert_eq!(Bflan::from_bytes(&bytes).unwrap(), animation);
+    let json = serde_jsonc2::to_vec_pretty(&animation).unwrap();
+    let restored: Bflan = serde_jsonc2::from_slice(&json).unwrap();
+    assert_eq!(restored.to_bytes().unwrap(), bytes);
 }
 
 #[test]
@@ -120,6 +209,7 @@ fn rejects_malformed_nested_offsets_and_curve_types() {
                     }]),
                     name: None,
                 }],
+                target2_prefix: None,
             }],
         }],
     })]);
@@ -158,6 +248,7 @@ fn edits_step_hermite_and_target_two_names_through_json() {
             child_binding: false,
             name: "Open".into(),
             groups: vec!["main".into()],
+            group_record_size: Default::default(),
         }),
         Section::Pai1(Pai1 {
             frame_count: 4,
@@ -179,6 +270,7 @@ fn edits_step_hermite_and_target_two_names_through_json() {
                             }]),
                             name: None,
                         }],
+                        target2_prefix: None,
                     }],
                 },
                 AnimationEntry {
@@ -196,6 +288,7 @@ fn edits_step_hermite_and_target_two_names_through_json() {
                             }]),
                             name: Some("RubyColorIndex".into()),
                         }],
+                        target2_prefix: None,
                     }],
                 },
             ],
@@ -234,6 +327,7 @@ fn rejects_malformed_embedded_user_data() {
         child_binding: false,
         name: "Open".into(),
         groups: vec![],
+        group_record_size: Default::default(),
     })])
     .to_bytes()
     .unwrap();
@@ -273,6 +367,7 @@ fn json_preserves_non_finite_keyframe_bits() {
                     }]),
                     name: None,
                 }],
+                target2_prefix: None,
             }],
         }],
     })]);
